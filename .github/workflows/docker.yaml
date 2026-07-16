@@ -31,7 +31,7 @@ jobs:
       - name: Build docs and web
         run: make docs web
       - name: Build Go binary
-        run: CGO_ENABLED=1 go build -tags 'sqlite_omit_load_extension osusergo netgo' -ldflags '-linkmode=external -extldflags=-static -s -w' -o ntfy ./cmd/ntfy
+        run: CGO_ENABLED=1 go build -tags 'sqlite_omit_load_extension osusergo netgo' -ldflags '-linkmode=external -extldflags=-static -s -w' -o ntfy .
       - name: Determine image tag
         id: tag
         run: |
