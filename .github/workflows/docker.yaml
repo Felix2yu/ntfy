@@ -29,6 +29,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install goreleaser
+        run: go install github.com/goreleaser/goreleaser/v2@latest
       - name: Install dependencies
         run: make build-deps-ubuntu
       - name: Build and publish
