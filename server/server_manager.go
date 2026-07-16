@@ -142,6 +142,9 @@ func (s *Server) pruneAttachments() {
 	if s.attachment == nil {
 		return
 	}
+	if s.config.AttachmentExpiryDuration == 0 {
+		return // Infinite retention, no attachments to prune
+	}
 	// Only mark as deleted in DB. The actual storage files are cleaned up
 	// by the attachment store's sync() loop, which periodically reconciles
 	// storage with the database and removes orphaned files.
@@ -164,6 +167,9 @@ func (s *Server) pruneMessages() {
 	// Only delete DB rows. Attachment storage files are cleaned up by the
 	// attachment store's sync() loop, which periodically reconciles storage
 	// with the database and removes orphaned files.
+	if s.config.CacheDuration == 0 {
+		return // Infinite retention, no messages to prune
+	}
 	log.
 		Tag(tagManager).
 		Timing(func() {

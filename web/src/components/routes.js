@@ -18,6 +18,7 @@ const routes = {
     }
     return `/${subscription.topic}`;
   },
+  forTopic: (topic) => `/${topic}`,
 };
 
 export default routes;

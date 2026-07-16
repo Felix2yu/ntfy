@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"math"
 	"context"
 	"crypto/sha256"
 	"embed"
@@ -105,6 +106,8 @@ var (
 	apiVersionPath                                       = "/v1/version"
 	apiConfigPath                                        = "/v1/config"
 	apiStatsPath                                         = "/v1/stats"
+	apiTopicsPath                                        = "/v1/topics"
+	apiSearchPath                                        = "/v1/search"
 	apiWebPushPath                                       = "/v1/webpush"
 	apiTiersPath                                         = "/v1/tiers"
 	apiUsersPath                                         = "/v1/users"
@@ -311,7 +314,9 @@ func New(conf *Config) (*Server, error) {
 }
 
 func createMessageCache(conf *Config, pool *db.DB) (*message.Cache, error) {
-	if conf.CacheDuration == 0 {
+	// When CacheDuration is 0, it means infinite retention (messages never expire).
+	// In this case, still create a real store if CacheFile or DatabaseURL is configured
+	if conf.CacheDuration == 0 && conf.CacheFile == "" && pool == nil {
 		return message.NewNopStore()
 	} else if pool != nil {
 		return message.NewPostgresStore(pool, conf.CacheBatchSize, conf.CacheBatchTimeout)
@@ -635,6 +640,10 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request, v *visit
 		return s.ensureWebPushEnabled(s.limitRequests(s.handleWebPushDelete))(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == apiStatsPath {
 		return s.handleStats(w, r, v)
+	} else if r.Method == http.MethodGet && r.URL.Path == apiTopicsPath {
+		return s.handleTopics(w, r, v)
+	} else if r.Method == http.MethodGet && r.URL.Path == apiSearchPath {
+		return s.handleSearch(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == apiTiersPath {
 		return s.ensurePaymentsEnabled(s.handleBillingTiersGet)(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == matrixPushPath {
@@ -723,6 +732,62 @@ func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request, _ *visitor)
 	response := &apiStatsResponse{
 		Messages:     messages,
 		MessagesRate: rate,
+	}
+	return s.writeJSON(w, response)
+}
+
+// apiTopicsResponse is the response for the /v1/topics API
+type apiTopicsResponse struct {
+	Topics []string `json:"topics"`
+}
+
+// handleTopics returns the list of all topics with cached messages
+func (s *Server) handleTopics(w http.ResponseWriter, _ *http.Request, _ *visitor) error {
+	topics, err := s.messageCache.Topics()
+	if err != nil {
+		return err
+	}
+	response := &apiTopicsResponse{
+		Topics: topics,
+	}
+	return s.writeJSON(w, response)
+}
+
+// apiSearchResponse is the response for the /v1/search API
+type apiSearchResponse struct {
+	Messages []*model.Message `json:"messages"`
+}
+
+// handleSearch searches for messages matching the given parameters
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request, _ *visitor) error {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		return errHTTPBadRequestQueryMissing.With(nil)
+	}
+	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	until, _ := strconv.ParseInt(r.URL.Query().Get("until"), 10, 64)
+	priority, _ := strconv.Atoi(r.URL.Query().Get("priority"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	params := message.SearchParams{
+		Query:    q,
+		Topic:    r.URL.Query().Get("topic"),
+		Since:    since,
+		Until:    until,
+		Priority: priority,
+		Limit:    limit,
+	}
+	messages, err := s.messageCache.SearchMessages(params)
+	if err != nil {
+		return err
+	}
+	response := &apiSearchResponse{
+		Messages: messages,
 	}
 	return s.writeJSON(w, response)
 }
@@ -854,7 +919,11 @@ func (s *Server) handlePublishInternal(r *http.Request, v *visitor) (*model.Mess
 	m.Sender = v.IP()
 	m.User = v.MaybeUserID()
 	if cache {
-		m.Expires = time.Unix(m.Time, 0).Add(v.Limits().MessageExpiryDuration).Unix()
+		if v.Limits().MessageExpiryDuration == 0 {
+			m.Expires = math.MaxInt64 // Infinite retention
+		} else {
+			m.Expires = time.Unix(m.Time, 0).Add(v.Limits().MessageExpiryDuration).Unix()
+		}
 	}
 	if err := s.handlePublishBody(r, v, m, body, template, unifiedpush, priorityStr); err != nil {
 		return nil, err
@@ -1293,7 +1362,12 @@ func (s *Server) handleBodyAsAttachment(r *http.Request, v *visitor, m *model.Me
 	if err != nil {
 		return err
 	}
-	attachmentExpiry := time.Now().Add(vinfo.Limits.AttachmentExpiryDuration).Unix()
+	var attachmentExpiry int64
+	if vinfo.Limits.AttachmentExpiryDuration == 0 {
+		attachmentExpiry = math.MaxInt64 // Infinite retention
+	} else {
+		attachmentExpiry = time.Now().Add(vinfo.Limits.AttachmentExpiryDuration).Unix()
+	}
 	if m.Expires > 0 && attachmentExpiry > m.Expires {
 		attachmentExpiry = m.Expires // Attachment must never outlive the message
 	}

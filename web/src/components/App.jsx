@@ -10,6 +10,7 @@ import Navigation from "./Navigation";
 import ActionBar from "./ActionBar";
 import Preferences from "./Preferences";
 import subscriptionManager from "../app/SubscriptionManager";
+import api from "../app/Api";
 import userManager from "../app/UserManager";
 import { expandUrl, getKebabCaseLangStr, darkModeEnabled, updateFavicon } from "../app/utils";
 import ErrorBoundary from "./ErrorBoundary";
@@ -121,6 +122,23 @@ const Layout = () => {
   const [sendDialogOpenMode, setSendDialogOpenMode] = useState("");
   const users = useLiveQuery(() => userManager.all());
   const subscriptions = useLiveQuery(() => subscriptionManager.all());
+  const [topics, setTopics] = useState([]);
+  
+  // Load topics from server
+  useEffect(() => {
+    const loadTopics = async () => {
+      try {
+        const serverTopics = await api.topics(config.base_url);
+        setTopics(serverTopics);
+      } catch (e) {
+        console.error("[App] Failed to load topics:", e);
+      }
+    };
+    loadTopics();
+    // Refresh topics every 30 seconds
+    const interval = setInterval(loadTopics, 30000);
+    return () => clearInterval(interval);
+  }, []);
   // Preloaded here so the All view (and single topics, via filter) have data on mount -- no empty
   // frame when switching.
   const allNotifications = useLiveQuery(() => subscriptionManager.getAllNotifications());
@@ -151,6 +169,7 @@ const Layout = () => {
         <ActionBar selected={selected} onMobileDrawerToggle={() => setMobileDrawerOpen(!mobileDrawerOpen)} />
         <Navigation
           subscriptions={subscriptionsWithoutInternal}
+          topics={topics}
           selectedSubscription={selected}
           mobileDrawerOpen={mobileDrawerOpen}
           onMobileDrawerToggle={() => setMobileDrawerOpen(!mobileDrawerOpen)}
