@@ -14,6 +14,18 @@ import (
 
 // SQLite runtime query constants
 const (
+	sqliteSelectMessagesSearchQuery = `
+		SELECT mid, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user, content_type, encoding
+		FROM messages
+		WHERE published = 1
+		  AND (message LIKE ? OR title LIKE ?)
+		  AND (topic = ? OR ? = '')
+		  AND time >= ?
+		  AND time <= ?
+		  AND (priority = ? OR ? = 0)
+		ORDER BY time DESC, id DESC
+		LIMIT ?
+	`
 	sqliteInsertMessageQuery = `
 		INSERT INTO messages (mid, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, attachment_deleted, sender, user, content_type, encoding, published)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -106,7 +106,8 @@ var (
 	apiVersionPath                                       = "/v1/version"
 	apiConfigPath                                        = "/v1/config"
 	apiStatsPath                                         = "/v1/stats"
-apiTopicsPath                                        = "/v1/topics"
+	apiTopicsPath                                        = "/v1/topics"
+	apiSearchPath                                        = "/v1/search"
 	apiWebPushPath                                       = "/v1/webpush"
 	apiTiersPath                                         = "/v1/tiers"
 	apiUsersPath                                         = "/v1/users"
@@ -641,6 +642,8 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request, v *visit
 		return s.handleStats(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == apiTopicsPath {
 		return s.handleTopics(w, r, v)
+	} else if r.Method == http.MethodGet && r.URL.Path == apiSearchPath {
+		return s.handleSearch(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == apiTiersPath {
 		return s.ensurePaymentsEnabled(s.handleBillingTiersGet)(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == matrixPushPath {
@@ -746,6 +749,45 @@ func (s *Server) handleTopics(w http.ResponseWriter, _ *http.Request, _ *visitor
 	}
 	response := &apiTopicsResponse{
 		Topics: topics,
+	}
+	return s.writeJSON(w, response)
+}
+
+// apiSearchResponse is the response for the /v1/search API
+type apiSearchResponse struct {
+	Messages []*model.Message `json:"messages"`
+}
+
+// handleSearch searches for messages matching the given parameters
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request, _ *visitor) error {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		return errHTTPBadRequestQueryMissing.With(nil)
+	}
+	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	until, _ := strconv.ParseInt(r.URL.Query().Get("until"), 10, 64)
+	priority, _ := strconv.Atoi(r.URL.Query().Get("priority"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	params := message.SearchParams{
+		Query:    q,
+		Topic:    r.URL.Query().Get("topic"),
+		Since:    since,
+		Until:    until,
+		Priority: priority,
+		Limit:    limit,
+	}
+	messages, err := s.messageCache.SearchMessages(params)
+	if err != nil {
+		return err
+	}
+	response := &apiSearchResponse{
+		Messages: messages,
 	}
 	return s.writeJSON(w, response)
 }
