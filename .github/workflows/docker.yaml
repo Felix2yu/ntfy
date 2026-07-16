@@ -35,6 +35,8 @@ jobs:
       - name: Determine image tag
         id: tag
         run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "tag=dev" >> "$GITHUB_OUTPUT"
           else
@@ -45,4 +47,4 @@ jobs:
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ghcr.io/${{ github.repository_owner }}/ntfy:${{ steps.tag.outputs.tag }}
+          tags: ghcr.io/${{ steps.tag.outputs.owner }}/ntfy:${{ steps.tag.outputs.tag }}
