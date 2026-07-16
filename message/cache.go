@@ -45,7 +45,6 @@ type queries struct {
 	selectStats                      string
 	updateStats                      string
 	updateMessageTime                string
-	selectMessagesSearch             string
 }
 
 // Cache stores published messages
@@ -311,39 +310,6 @@ func (c *Cache) Topics() ([]string, error) {
 	}
 	defer rows.Close()
 	return readStrings(rows)
-}
-
-// SearchParams holds search parameters for querying messages
-type SearchParams struct {
-	Query    string // Search keyword (matches message and title)
-	Topic    string // Filter by topic (empty = all topics)
-	Since    int64  // Start time (Unix timestamp, 0 = no limit)
-	Until    int64  // End time (Unix timestamp, 0 = no limit)
-	Priority int    // Filter by priority (0 = any)
-	Limit    int    // Max results (default 50, max 500)
-}
-
-// SearchMessages searches for messages matching the given parameters
-func (c *Cache) SearchMessages(params SearchParams) ([]*model.Message, error) {
-	if params.Limit <= 0 {
-		params.Limit = 50
-	}
-	if params.Limit > 500 {
-		params.Limit = 500
-	}
-	query := "%" + params.Query + "%"
-	rows, err := c.db.ReadOnly().Query(
-		c.queries.selectMessagesSearch,
-		query, query, // message LIKE, title LIKE
-		params.Topic, params.Topic, // topic filter
-		params.Since, params.Until, // time range
-		params.Priority, params.Priority, // priority filter
-		params.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return readMessages(rows)
 }
 
 // DeleteScheduledBySequenceID deletes unpublished (scheduled) messages with the given topic and sequence ID.

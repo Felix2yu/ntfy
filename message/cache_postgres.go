@@ -8,18 +8,6 @@ import (
 
 // PostgreSQL runtime query constants
 const (
-	postgresSelectMessagesSearchQuery = `
-		SELECT mid, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, \"user\", content_type, encoding
-		FROM message
-		WHERE published = TRUE
-		  AND (message ILIKE  OR title ILIKE )
-		  AND (topic =  OR  = '')
-		  AND time >= 
-		  AND time <= 
-		  AND (priority =  OR  = 0)
-		ORDER BY time DESC, id DESC
-		LIMIT 
-	`
 	postgresInsertMessageQuery = `
 		INSERT INTO message (mid, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, attachment_deleted, sender, user_id, content_type, encoding, published)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
@@ -110,7 +98,6 @@ var postgresQueries = queries{
 	selectStats:                      postgresSelectStatsQuery,
 	updateStats:                      postgresUpdateStatsQuery,
 	updateMessageTime:                postgresUpdateMessageTimeQuery,
-	selectMessagesSearch:             postgresSelectMessagesSearchQuery,
 }
 
 // NewPostgresStore creates a new PostgreSQL-backed message cache store using an existing database connection pool.

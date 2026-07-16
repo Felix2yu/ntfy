@@ -26,7 +26,6 @@ import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutlineOutlined
 import Person from "@mui/icons-material/Person";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AddIcon from "@mui/icons-material/Add";
-import SearchIcon from "@mui/icons-material/Search";
 import { useLocation, useNavigate } from "react-router-dom";
 import ChatBubble from "@mui/icons-material/ChatBubble";
 import MoreVert from "@mui/icons-material/MoreVert";
@@ -36,7 +35,6 @@ import ArticleIcon from "@mui/icons-material/Article";
 import { Trans, useTranslation } from "react-i18next";
 import CelebrationIcon from "@mui/icons-material/Celebration";
 import SubscribeDialog from "./SubscribeDialog";
-import SearchDialog from "./SearchDialog";
 import { openUrl, topicDisplayName, topicUrl } from "../app/utils";
 import routes from "./routes";
 import { ConnectionState } from "../app/Connection";
@@ -96,7 +94,6 @@ const NavList = (props) => {
   const { account } = useContext(AccountContext);
   const [subscribeDialogKey, setSubscribeDialogKey] = useState(0);
   const [subscribeDialogOpen, setSubscribeDialogOpen] = useState(false);
-  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const [versionChanged, setVersionChanged] = useState(false);
   const topics = props.topics || [];
 
@@ -210,12 +207,6 @@ const NavList = (props) => {
           </ListItemIcon>
           <ListItemText primary={t("nav_button_publish_message")} />
         </ListItemButton>
-        <ListItemButton onClick={() => setSearchDialogOpen(true)}>
-          <ListItemIcon>
-            <SearchIcon />
-          </ListItemIcon>
-          <ListItemText primary={t("nav_button_search", "Search")} />
-        </ListItemButton>
         <ListItemButton onClick={() => setSubscribeDialogOpen(true)}>
           <ListItemIcon>
             <AddIcon />
@@ -228,11 +219,6 @@ const NavList = (props) => {
           <UpgradeBanner key={`upgrade-banner-${theme.palette.mode}`} mode={theme.palette.mode} />
         )}
       </List>
-      <SearchDialog
-        open={searchDialogOpen}
-        onClose={() => setSearchDialogOpen(false)}
-        topics={topics}
-      />
       <SubscribeDialog
         key={`subscribeDialog${subscribeDialogKey}`} // Resets dialog when canceled/closed
         open={subscribeDialogOpen}

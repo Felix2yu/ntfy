@@ -37,22 +37,6 @@ class Api {
     return data.topics || [];
   }
 
-  async search(baseUrl, params) {
-    const { q, topic, since, until, priority, limit } = params;
-    const searchParams = new URLSearchParams();
-    searchParams.set('q', q);
-    if (topic) searchParams.set('topic', topic);
-    if (since) searchParams.set('since', since.toString());
-    if (until) searchParams.set('until', until.toString());
-    if (priority) searchParams.set('priority', priority.toString());
-    if (limit) searchParams.set('limit', limit.toString());
-    const url = `${baseUrl}/v1/search?${searchParams.toString()}`;
-    console.log(`[Api] Searching messages: ${url}`);
-    const response = await fetchOrThrow(url);
-    const data = await response.json();
-    return data.messages || [];
-  }
-
   async publish(baseUrl, topic, message, options) {
     const user = await userManager.get(baseUrl);
     console.log(`[Api] Publishing message to ${topicUrl(baseUrl, topic)}`);
