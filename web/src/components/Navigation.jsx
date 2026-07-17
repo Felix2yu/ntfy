@@ -179,7 +179,7 @@ const NavList = (props) => {
             <TopicList
               topics={topics}
               subscriptions={props.subscriptions || []}
-              selectedTopic={params.topic}
+              selectedTopic={location.pathname.split('/').pop()}
             />
             <Divider sx={{ my: 1 }} />
           </>
