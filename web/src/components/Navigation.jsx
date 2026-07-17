@@ -329,25 +329,22 @@ const TopicList = (props) => {
     navigate(routes.forTopic(topic));
   };
 
-  const sortedTopics = [...props.topics].sort();
   const subscribedTopics = new Set((props.subscriptions || []).map(s => s.topic));
+  const unsubscribedTopics = [...props.topics].filter(topic => !subscribedTopics.has(topic)).sort();
+
+  if (unsubscribedTopics.length === 0) {
+    return null;
+  }
 
   return (
     <>
-      {sortedTopics.map((topic) => (
+      {unsubscribedTopics.map((topic) => (
         <ListItemButton
           key={topic}
           onClick={() => handleTopicClick(topic)}
-          selected={props.selectedTopic === topic}
         >
           <ListItemIcon>
-            {subscribedTopics.has(topic) ? (
-              <Badge badgeContent={props.subscriptions.find(s => s.topic === topic)?.new || 0} color="primary">
-                <ChatBubbleOutlineIcon />
-              </Badge>
-            ) : (
-              <ChatBubbleOutlineIcon />
-            )}
+            <ChatBubbleOutlineIcon />
           </ListItemIcon>
           <ListItemText primary={topic} />
         </ListItemButton>
