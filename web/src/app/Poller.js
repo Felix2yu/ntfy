@@ -42,7 +42,8 @@ class Poller {
   async poll(subscription) {
     console.log(`[Poller] Polling ${subscription.id}`);
 
-    const since = subscription.last;
+    // For new subscriptions, get messages from the last hour to avoid loading all history
+    const since = subscription.last || '12h';
     const notifications = await api.poll(subscription.baseUrl, subscription.topic, since);
 
     // Filter out notifications older than the prune threshold

@@ -28,6 +28,7 @@ import { ACTION_BROADCAST, ACTION_COPY, ACTION_HTTP, ACTION_VIEW } from "../app/
 import { formatMessage, formatTitle, isImage } from "../app/notificationUtils";
 import { LightboxBackdrop, Paragraph, VerticallyCenteredContainer } from "./styles";
 import subscriptionManager from "../app/SubscriptionManager";
+import api from "../app/Api";
 import notifier from "../app/Notifier";
 import priority1 from "../img/priority-1.svg";
 import priority2 from "../img/priority-2.svg";
@@ -76,16 +77,77 @@ const AllSubscriptionsList = (props) => {
 
 const SingleSubscriptionList = (props) => {
   const { subscription, allNotifications } = props;
+  const { t } = useTranslation();
+  const [loadingHistory, setLoadingHistory] = useState(false);
   // Filter the preloaded allNotifications instead of a per-topic query (getNotifications(id) ==
   // getAllNotifications() filtered by id), so topic switches are instant.
   const notifications = useMemo(
     () => allNotifications.filter((notification) => notification.subscriptionId === subscription.id),
     [allNotifications, subscription.id],
   );
+
+  const handleLoadHistory = async (since) => {
+    setLoadingHistory(true);
+    try {
+      const messages = await api.poll(subscription.baseUrl, subscription.topic, since);
+      if (messages.length > 0) {
+        await subscriptionManager.addNotifications(subscription.id, messages);
+      }
+    } catch (e) {
+      console.error("[Notifications] Failed to load history:", e);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleLoadAllHistory = async () => {
+    if (!window.confirm(t("notifications_load_all_confirm", "Loading all history may take a long time. Continue?"))) {
+      return;
+    }
+    await handleLoadHistory("all");
+  };
+
   if (notifications.length === 0) {
     return <NoNotifications subscription={subscription} />;
   }
-  return <NotificationList id={subscription.id} notifications={notifications} messageBar />;
+
+  return (
+    <>
+      <Box sx={{ display: "flex", justifyContent: "center", gap: 1, my: 2, flexWrap: "wrap" }}>
+        <Button
+          size="small"
+          onClick={() => handleLoadHistory("24h")}
+          disabled={loadingHistory}
+          startIcon={loadingHistory ? <CircularProgress size={16} /> : null}
+        >
+          {t("notifications_load_history_24h", "24h")}
+        </Button>
+        <Button
+          size="small"
+          onClick={() => handleLoadHistory("168h")}
+          disabled={loadingHistory}
+        >
+          {t("notifications_load_history_7d", "7 days")}
+        </Button>
+        <Button
+          size="small"
+          onClick={() => handleLoadHistory("720h")}
+          disabled={loadingHistory}
+        >
+          {t("notifications_load_history_30d", "30 days")}
+        </Button>
+        <Button
+          size="small"
+          color="warning"
+          onClick={handleLoadAllHistory}
+          disabled={loadingHistory}
+        >
+          {t("notifications_load_history_all", "All history")}
+        </Button>
+      </Box>
+      <NotificationList id={subscription.id} notifications={notifications} messageBar />
+    </>
+  );
 };
 
 const NotificationList = (props) => {
