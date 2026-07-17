@@ -4,7 +4,6 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 ARG NODE_MAJOR=24
 
-# Install system dependencies (cached layer)
 RUN apt-get update && apt-get install -y \
        build-essential ca-certificates curl gnupg \
     && mkdir -p /etc/apt/keyrings \
@@ -18,30 +17,23 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-# Copy dependency files first for better caching
 ADD Makefile .
+
+# docs
 ADD ./requirements.txt .
-ADD ./mkdocs.yml .
-
-# Install Python dependencies (cached if requirements.txt unchanged)
 RUN --mount=type=cache,target=/root/.cache/pip make docs-deps
-
-# Copy web dependency files first
-ADD ./web/package.json ./web/package-lock.json ./web/
-
-# Install npm dependencies (cached if package*.json unchanged)
-RUN --mount=type=cache,target=/root/.npm make web-deps
-
-# Copy Go module files first
-ADD go.mod go.sum ./
-
-# Download Go modules (cached if go.mod/go.sum unchanged)
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
-
-# Now copy source files
+ADD ./mkdocs.yml .
 ADD ./docs ./docs
+RUN make docs-build
+
+# web
+ADD ./web/package.json ./web/package-lock.json ./web/
+RUN --mount=type=cache,target=/root/.npm make web-deps
 ADD ./web ./web
+RUN make web-build
+
+# cli & server
+ADD go.mod go.sum main.go ./
 ADD ./client ./client
 ADD ./cmd ./cmd
 ADD ./log ./log
@@ -56,9 +48,6 @@ ADD ./webpush ./webpush
 ADD ./attachment ./attachment
 ADD ./mail ./mail
 ADD ./s3 ./s3
-ADD main.go .
-
-# Build with Go build cache
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build make VERSION=$VERSION COMMIT=$COMMIT cli-linux-server
 
 FROM alpine
