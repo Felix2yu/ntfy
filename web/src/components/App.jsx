@@ -120,6 +120,7 @@ const Layout = () => {
   const { account, setAccount } = useContext(AccountContext);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [sendDialogOpenMode, setSendDialogOpenMode] = useState("");
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const users = useLiveQuery(() => userManager.all());
   const subscriptions = useLiveQuery(() => subscriptionManager.all());
   const [topics, setTopics] = useState([]);
@@ -166,7 +167,7 @@ const Layout = () => {
   return (
     <PrefCacheProvider>
       <Box sx={{ display: "flex" }}>
-        <ActionBar selected={selected} onMobileDrawerToggle={() => setMobileDrawerOpen(!mobileDrawerOpen)} />
+        <ActionBar selected={selected} topics={topics} searchDialogOpen={searchDialogOpen} onSearchDialogClose={() => setSearchDialogOpen(false)} onMobileDrawerToggle={() => setMobileDrawerOpen(!mobileDrawerOpen)} onSearchClick={() => setSearchDialogOpen(true)} />
         <Navigation
           subscriptions={subscriptionsWithoutInternal}
           topics={topics}

@@ -8,6 +8,7 @@ import NotificationsIcon from "@mui/icons-material/Notifications";
 import NotificationsOffIcon from "@mui/icons-material/NotificationsOff";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import HistoryIcon from "@mui/icons-material/History";
+import SearchIcon from "@mui/icons-material/Search";
 import { useTranslation } from "react-i18next";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import Logout from "@mui/icons-material/Logout";
@@ -25,6 +26,7 @@ import Navigation from "./Navigation";
 import accountApi from "../app/AccountApi";
 import PopupMenu from "./PopupMenu";
 import { SubscriptionPopup } from "./SubscriptionPopup";
+import SearchDialog from "./SearchDialog";
 import { useIsLaunchedPWA } from "./hooks";
 
 const ActionBar = (props) => {
@@ -95,10 +97,14 @@ const ActionBar = (props) => {
           {title}
         </Typography>
         {isLaunchedPWA && <ReloadIcon />}
+        <IconButton color="inherit" size="large" edge="end" onClick={() => props.onSearchClick?.()} aria-label={t("nav_button_search")}>
+          <SearchIcon />
+        </IconButton>
         {props.selected && <HistoryButtons subscription={props.selected} />}
         {props.selected && <SettingsIcons subscription={props.selected} onUnsubscribe={props.onUnsubscribe} />}
         <ProfileIcon />
       </Toolbar>
+      <SearchDialog open={!!props.searchDialogOpen} onClose={() => props.onSearchDialogClose?.()} topics={props.topics} />
     </AppBar>
   );
 };

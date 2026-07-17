@@ -127,14 +127,15 @@ const SearchDialog = (props) => {
               </Select>
             </FormControl>
           </Stack>
-          <Stack direction="row" spacing={2}>
+          <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
             <TextField
               label={t("search_dialog_since", "Since (optional)")}
               type="datetime-local"
               value={since}
               onChange={(e) => setSince(e.target.value)}
               fullWidth
-              InputLabelProps={{ shrink: true }}
+              size="small"
+              slotProps={{ inputLabel: { shrink: true } }}
             />
             <TextField
               label={t("search_dialog_until", "Until (optional)")}
@@ -142,7 +143,8 @@ const SearchDialog = (props) => {
               value={until}
               onChange={(e) => setUntil(e.target.value)}
               fullWidth
-              InputLabelProps={{ shrink: true }}
+              size="small"
+              slotProps={{ inputLabel: { shrink: true } }}
             />
           </Stack>
 
