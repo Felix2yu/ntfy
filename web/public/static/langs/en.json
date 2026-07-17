@@ -68,6 +68,7 @@
   "action_bar_sign_in": "Sign in",
   "action_bar_sign_up": "Sign up",
   "action_bar_reload": "Reload app",
+  "action_bar_load_history": "Load history",
   "message_bar_type_message": "Type a message here",
   "message_bar_error_publishing": "Error publishing notification",
   "message_bar_show_dialog": "Show publish dialog",

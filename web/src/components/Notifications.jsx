@@ -113,38 +113,6 @@ const SingleSubscriptionList = (props) => {
 
   return (
     <>
-      <Box sx={{ display: "flex", justifyContent: "center", gap: 1, my: 2, flexWrap: "wrap" }}>
-        <Button
-          size="small"
-          onClick={() => handleLoadHistory("24h")}
-          disabled={loadingHistory}
-          startIcon={loadingHistory ? <CircularProgress size={16} /> : null}
-        >
-          {t("notifications_load_history_24h", "24h")}
-        </Button>
-        <Button
-          size="small"
-          onClick={() => handleLoadHistory("168h")}
-          disabled={loadingHistory}
-        >
-          {t("notifications_load_history_7d", "7 days")}
-        </Button>
-        <Button
-          size="small"
-          onClick={() => handleLoadHistory("720h")}
-          disabled={loadingHistory}
-        >
-          {t("notifications_load_history_30d", "30 days")}
-        </Button>
-        <Button
-          size="small"
-          color="warning"
-          onClick={handleLoadAllHistory}
-          disabled={loadingHistory}
-        >
-          {t("notifications_load_history_all", "All history")}
-        </Button>
-      </Box>
       <NotificationList id={subscription.id} notifications={notifications} messageBar />
     </>
   );

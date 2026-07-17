@@ -1,4 +1,4 @@
-import { AppBar, Toolbar, IconButton, Typography, Box, MenuItem, Button, Divider, ListItemIcon, useTheme } from "@mui/material";
+import { AppBar, Toolbar, IconButton, Typography, Box, MenuItem, Button, Divider, ListItemIcon, CircularProgress, useTheme } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import * as React from "react";
 import { useState } from "react";
@@ -7,6 +7,7 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import NotificationsIcon from "@mui/icons-material/Notifications";
 import NotificationsOffIcon from "@mui/icons-material/NotificationsOff";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import HistoryIcon from "@mui/icons-material/History";
 import { useTranslation } from "react-i18next";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import Logout from "@mui/icons-material/Logout";
@@ -15,6 +16,7 @@ import Settings from "@mui/icons-material/Settings";
 import session from "../app/Session";
 import logo from "../img/ntfy.svg";
 import subscriptionManager from "../app/SubscriptionManager";
+import api from "../app/Api";
 import routes from "./routes";
 import db from "../app/db";
 import { topicDisplayName } from "../app/utils";
@@ -93,6 +95,7 @@ const ActionBar = (props) => {
           {title}
         </Typography>
         {isLaunchedPWA && <ReloadIcon />}
+        {props.selected && <HistoryButtons subscription={props.selected} />}
         {props.selected && <SettingsIcons subscription={props.selected} onUnsubscribe={props.onUnsubscribe} />}
         <ProfileIcon />
       </Toolbar>
@@ -125,6 +128,64 @@ const SettingsIcons = (props) => {
         <MoreVertIcon />
       </IconButton>
       <SubscriptionPopup subscription={subscription} anchor={anchorEl} placement="right" onClose={() => setAnchorEl(null)} />
+    </>
+  );
+};
+
+const HistoryButtons = (props) => {
+  const { t } = useTranslation();
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const { subscription } = props;
+
+  const handleLoadHistory = async (since) => {
+    setLoading(true);
+    setAnchorEl(null);
+    try {
+      const messages = await api.poll(subscription.baseUrl, subscription.topic, since);
+      if (messages.length > 0) {
+        await subscriptionManager.addNotifications(subscription.id, messages);
+      }
+    } catch (e) {
+      console.error("[ActionBar] Failed to load history:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoadAllHistory = async () => {
+    if (!window.confirm(t("notifications_load_all_confirm", "Loading all history may take a long time. Continue?"))) {
+      return;
+    }
+    await handleLoadHistory("all");
+  };
+
+  return (
+    <>
+      <IconButton
+        color="inherit"
+        size="large"
+        edge="end"
+        onClick={(ev) => setAnchorEl(ev.currentTarget)}
+        disabled={loading}
+        aria-label={t("action_bar_load_history")}
+      >
+        {loading ? <CircularProgress size={24} color="inherit" /> : <HistoryIcon />}
+      </IconButton>
+      <PopupMenu horizontal="right" anchorEl={anchorEl} open={!!anchorEl} onClose={() => setAnchorEl(null)}>
+        <MenuItem onClick={() => handleLoadHistory("24h")}>
+          {t("notifications_load_history_24h", "24h")}
+        </MenuItem>
+        <MenuItem onClick={() => handleLoadHistory("168h")}>
+          {t("notifications_load_history_7d", "7 days")}
+        </MenuItem>
+        <MenuItem onClick={() => handleLoadHistory("720h")}>
+          {t("notifications_load_history_30d", "30 days")}
+        </MenuItem>
+        <MenuItem onClick={handleLoadAllHistory} sx={{ color: "warning.main" }}>
+          {t("notifications_load_history_all", "All history")}
+        </MenuItem>
+      </PopupMenu>
     </>
   );
 };

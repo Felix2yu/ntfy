@@ -438,6 +438,7 @@
   "reset_password_form_error_invalid": "此重置链接无效或已过期。请请求新链接。",
   "reset_password_success_description": "密码已更改。现在可以用新密码登录。",
   "action_bar_reload": "重新加载应用",
+  "action_bar_load_history": "加载历史",
   "account_basics_emails_title": "电子邮件地址",
   "account_basics_emails_description": "用于电子邮件通知和重置密码",
   "account_basics_emails_no_emails_yet": "尚无邮箱",
