@@ -27,7 +27,9 @@ import Person from "@mui/icons-material/Person";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
+import Edit from "@mui/icons-material/Edit";
 import { useLocation, useNavigate } from "react-router-dom";
+import { Dialog, DialogTitle, DialogContent, DialogActions, TextField } from "@mui/material";
 import ChatBubble from "@mui/icons-material/ChatBubble";
 import MoreVert from "@mui/icons-material/MoreVert";
 import NotificationsOffOutlined from "@mui/icons-material/NotificationsOffOutlined";
@@ -49,6 +51,7 @@ import UpgradeDialog from "./UpgradeDialog";
 import AccountContext from "./AccountContext";
 import { PermissionDenyAll, PermissionRead, PermissionReadWrite, PermissionWrite } from "./ReserveIcons";
 import { SubscriptionPopup } from "./SubscriptionPopup";
+import topicDisplayNameManager from "../app/TopicDisplayNameManager";
 import { useNotificationPermissionListener, useVersionChangeListener } from "./hooks";
 
 const navWidth = 280;
@@ -320,13 +323,34 @@ const SubscriptionList = (props) => {
 const TopicList = (props) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [displayNames, setDisplayNames] = React.useState({});
+  const [editTopic, setEditTopic] = React.useState(null);
+  const [editName, setEditName] = React.useState("");
+  const [editDialogOpen, setEditDialogOpen] = React.useState(false);
   const subscriptionManager = require("../app/SubscriptionManager").default;
+
+  // Load display names
+  React.useEffect(() => {
+    topicDisplayNameManager.getAll().then(setDisplayNames);
+  }, [props.topics]);
 
   const handleTopicClick = async (topic) => {
     const baseUrl = config.base_url;
-    // Create subscription if it doesn't exist
     await subscriptionManager.upsert(baseUrl, topic);
     navigate(routes.forTopic(topic));
+  };
+
+  const handleEditClick = (e, topic) => {
+    e.stopPropagation();
+    setEditTopic(topic);
+    setEditName(displayNames[topic] || "");
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveName = async () => {
+    await topicDisplayNameManager.set(editTopic, editName);
+    setDisplayNames(prev => ({ ...prev, [editTopic]: editName }));
+    setEditDialogOpen(false);
   };
 
   const subscribedTopics = new Set((props.subscriptions || []).map(s => s.topic));
@@ -346,9 +370,32 @@ const TopicList = (props) => {
           <ListItemIcon>
             <ChatBubbleOutlineIcon />
           </ListItemIcon>
-          <ListItemText primary={topic} />
+          <ListItemText
+            primary={displayNames[topic] || topic}
+            secondary={displayNames[topic] ? topic : undefined}
+          />
+          <IconButton size="small" onClick={(e) => handleEditClick(e, topic)}>
+            <Edit fontSize="small" />
+          </IconButton>
         </ListItemButton>
       ))}
+      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)}>
+        <DialogTitle>{t("topic_display_name_title", "Set Display Name")}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            label={topic}
+            fullWidth
+            placeholder={t("topic_display_name_placeholder", "e.g. 告警通知")}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditDialogOpen(false)}>{t("common_cancel")}</Button>
+          <Button onClick={handleSaveName}>{t("common_save")}</Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };

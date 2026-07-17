@@ -11,11 +11,12 @@ const createDatabase = (username) => {
   const dbName = username ? `ntfy-${username}` : "ntfy"; // IndexedDB database is based on the logged-in user
   const db = new Dexie(dbName);
 
-  db.version(3).stores({
+  db.version(4).stores({
     subscriptions: "&id,baseUrl,[baseUrl+mutedUntil]",
     notifications: "&id,sequenceId,subscriptionId,time,new,[subscriptionId+new],[subscriptionId+sequenceId]",
     users: "&baseUrl,username",
     prefs: "&key",
+    topicDisplayNames: "&topic",
   });
 
   // When another connection (e.g., service worker or another tab) wants to upgrade,

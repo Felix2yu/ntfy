@@ -478,5 +478,7 @@
   "notifications_load_history_7d": "7天",
   "notifications_load_history_30d": "30天",
   "notifications_load_history_all": "全部历史",
-  "notifications_load_all_confirm": "加载全部历史记录可能需要较长时间，是否继续？"
+  "notifications_load_all_confirm": "加载全部历史记录可能需要较长时间，是否继续？",
+  "topic_display_name_title": "设置显示名称",
+  "topic_display_name_placeholder": "例如：告警通知"
 }

@@ -484,5 +484,7 @@
   "notifications_load_history_7d": "7 days",
   "notifications_load_history_30d": "30 days",
   "notifications_load_history_all": "All history",
-  "notifications_load_all_confirm": "Loading all history may take a long time. Continue?"
+  "notifications_load_all_confirm": "Loading all history may take a long time. Continue?",
+  "topic_display_name_title": "Set Display Name",
+  "topic_display_name_placeholder": "e.g. Alert Notifications"
 }
