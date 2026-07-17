@@ -11,7 +11,7 @@
   "message_bar_type_message": "在此处输入消息",
   "message_bar_show_dialog": "显示发布对话框",
   "message_bar_publish": "发布消息",
-  "nav_topics_title": "订阅主题",
+  "nav_topics_title": "已订阅主题",
   "nav_button_all_notifications": "全部通知",
   "nav_button_documentation": "文档",
   "nav_button_publish_message": "发布通知",
@@ -460,7 +460,7 @@
   "account_usage_emails_none": "无法向此账户发送邮件通知",
   "prefs_users_dialog_base_url_invalid": "无效的 URL 格式。必须以 http:// 或 https:// 开头",
   "prefs_users_dialog_base_url_exists": "此服务 URL 已存在一名用户",
-  "nav_server_topics_title": "服务器主题",
+  "nav_server_topics_title": "服务端主题",
   "nav_button_search": "搜索",
   "search_dialog_title": "搜索通知",
   "search_dialog_query": "搜索关键词",
@@ -478,7 +478,5 @@
   "notifications_load_history_7d": "7天",
   "notifications_load_history_30d": "30天",
   "notifications_load_history_all": "全部历史",
-  "notifications_load_all_confirm": "加载全部历史记录可能需要较长时间，是否继续？",
-  "topic_display_name_title": "设置显示名称",
-  "topic_display_name_placeholder": "例如：告警通知"
+  "notifications_load_all_confirm": "加载全部历史记录可能需要较长时间，是否继续？"
 }
