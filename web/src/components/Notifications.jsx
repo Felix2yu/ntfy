@@ -217,6 +217,14 @@ const NotificationItem = (props) => {
   const tags = otherTags.length > 0 ? otherTags.join(", ") : null;
   const handleDelete = async () => {
     console.log(`[Notifications] Deleting notification ${notification.id}`);
+    try {
+      const subscription = await subscriptionManager.get(notification.subscriptionId);
+      if (subscription) {
+        await api.delete(subscription.baseUrl, subscription.topic, notification.id);
+      }
+    } catch (e) {
+      console.error(`[Notifications] Failed to delete from server, deleting locally`, e);
+    }
     await subscriptionManager.deleteNotification(notification.id);
   };
   const handleMarkRead = async () => {

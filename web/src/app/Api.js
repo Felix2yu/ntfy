@@ -69,6 +69,16 @@ class Api {
     });
   }
 
+  async delete(baseUrl, topic, messageId) {
+    const user = await userManager.get(baseUrl);
+    const url = `${baseUrl}/${topic}/${messageId}`;
+    console.log(`[Api] Deleting message ${messageId} from ${url}`);
+    await fetchOrThrow(url, {
+      method: "DELETE",
+      headers: maybeWithAuth({}, user),
+    });
+  }
+
   /**
    * Publishes to a topic using XMLHttpRequest (XHR), and returns a Promise with the active request.
    * Unfortunately, fetch() does not support a progress hook, which is why XHR has to be used.
