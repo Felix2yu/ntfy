@@ -95,6 +95,7 @@ const NavList = (props) => {
   const [subscribeDialogKey, setSubscribeDialogKey] = useState(0);
   const [subscribeDialogOpen, setSubscribeDialogOpen] = useState(false);
   const [versionChanged, setVersionChanged] = useState(false);
+  const topics = props.topics || [];
 
   const handleVersionChange = () => {
     setVersionChanged(true);
