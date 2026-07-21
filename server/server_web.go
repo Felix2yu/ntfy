@@ -50,11 +50,20 @@ func (s *Server) handleWebManifest(w http.ResponseWriter, _ *http.Request, _ *vi
 		Scope:           "/",
 		StartURL:        s.config.WebRoot,
 		Display:         "standalone",
+		DisplayOverride: []string{"window-controls-overlay", "standalone"},
 		BackgroundColor: "#ffffff",
 		ThemeColor:      "#317f6f",
 		Icons: []*webManifestIcon{
 			{SRC: "/static/images/pwa-192x192.png", Sizes: "192x192", Type: "image/png"},
 			{SRC: "/static/images/pwa-512x512.png", Sizes: "512x512", Type: "image/png"},
+			{SRC: "/static/images/pwa-512x512.png", Sizes: "512x512", Type: "image/png", Purpose: "maskable"},
+		},
+		Screenshots: []*webManifestScreenshot{
+			{SRC: "/static/images/pwa-512x512.png", Sizes: "512x512", Type: "image/png", Form: "narrow", Label: "ntfy notifications"},
+		},
+		Shortcuts: []*webManifestShortcut{
+			{Name: "Publish notification", URL: "/"},
+			{Name: "All notifications", URL: "/"},
 		},
 	}
 	return s.writeJSONWithContentType(w, response, "application/manifest+json")

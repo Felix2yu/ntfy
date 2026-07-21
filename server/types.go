@@ -450,19 +450,37 @@ func newWebPushSubscriptionExpiringPayload() *webPushControlMessagePayload {
 
 // https://developer.mozilla.org/en-US/docs/Web/Manifest
 type webManifestResponse struct {
-	Name            string             `json:"name"`
-	Description     string             `json:"description"`
-	ShortName       string             `json:"short_name"`
-	Scope           string             `json:"scope"`
-	StartURL        string             `json:"start_url"`
-	Display         string             `json:"display"`
-	BackgroundColor string             `json:"background_color"`
-	ThemeColor      string             `json:"theme_color"`
-	Icons           []*webManifestIcon `json:"icons"`
+	Name            string                `json:"name"`
+	Description     string                `json:"description"`
+	ShortName       string                `json:"short_name"`
+	Scope           string                `json:"scope"`
+	StartURL        string                `json:"start_url"`
+	Display         string                `json:"display"`
+	DisplayOverride []string              `json:"display_override,omitempty"`
+	BackgroundColor string                `json:"background_color"`
+	ThemeColor      string                `json:"theme_color"`
+	Icons           []*webManifestIcon    `json:"icons"`
+	Screenshots     []*webManifestScreenshot `json:"screenshots,omitempty"`
+	Shortcuts       []*webManifestShortcut `json:"shortcuts,omitempty"`
 }
 
 type webManifestIcon struct {
-	SRC   string `json:"src"`
-	Sizes string `json:"sizes"`
-	Type  string `json:"type"`
+	SRC    string `json:"src"`
+	Sizes  string `json:"sizes"`
+	Type   string `json:"type"`
+	Purpose string `json:"purpose,omitempty"`
+}
+
+type webManifestScreenshot struct {
+	SRC    string `json:"src"`
+	Sizes  string `json:"sizes"`
+	Type   string `json:"type"`
+	Form   string `json:"form"`
+	Label  string `json:"label"`
+}
+
+type webManifestShortcut struct {
+	Name   string                `json:"name"`
+	URL    string                `json:"url"`
+	Icons  []*webManifestIcon    `json:"icons,omitempty"`
 }

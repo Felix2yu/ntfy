@@ -1,7 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from "workbox-precaching";
 import { NavigationRoute, registerRoute } from "workbox-routing";
-import { NetworkFirst } from "workbox-strategies";
+import { NetworkFirst, StaleWhileRevalidate, CacheFirst } from "workbox-strategies";
+import { ExpirationPlugin } from "workbox-expiration";
 import { clientsClaim } from "workbox-core";
 import { dbAsync } from "../src/app/db";
 import session from "../src/app/Session";
@@ -450,4 +451,37 @@ if (!import.meta.env.DEV) {
   // is unavailable. this is important since there's no "refresh" button in the installed pwa
   // to force a reload.
   registerRoute(({ url }) => url.pathname === "/config.js", new NetworkFirst());
+
+  // Cache the topics list with StaleWhileRevalidate: serve cached immediately, update in background
+  registerRoute(
+    ({ url }) => url.pathname === "/v1/topics",
+    new StaleWhileRevalidate({
+      cacheName: "ntfy-topics",
+      plugins: [
+        new ExpirationPlugin({ maxEntries: 1, maxAgeSeconds: 300 }), // 5 minutes
+      ],
+    }),
+  );
+
+  // Cache static images (icons, etc.) with CacheFirst for offline support
+  registerRoute(
+    ({ url }) => url.pathname.startsWith("/static/images/"),
+    new CacheFirst({
+      cacheName: "ntfy-images",
+      plugins: [
+        new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 7 * 24 * 60 * 60 }), // 7 days
+      ],
+    }),
+  );
+
+  // Cache static CSS/JS with StaleWhileRevalidate for fast loads
+  registerRoute(
+    ({ url }) => url.pathname.startsWith("/static/"),
+    new StaleWhileRevalidate({
+      cacheName: "ntfy-static",
+      plugins: [
+        new ExpirationPlugin({ maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 }), // 1 day
+      ],
+    }),
+  );
 }
