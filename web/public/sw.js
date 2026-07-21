@@ -445,6 +445,28 @@ if (!import.meta.env.DEV) {
     }),
   );
 
+  // For all other navigation requests, serve the offline page when network fails
+  registerRoute(
+    ({ request }) => request.mode === "navigate",
+    async ({ request }) => {
+      try {
+        const networkResponse = await fetch(request);
+        // Cache successful responses for offline use
+        if (networkResponse && networkResponse.status === 200) {
+          const cache = await caches.open("ntfy-pages");
+          cache.put(request, networkResponse.clone());
+        }
+        return networkResponse;
+      } catch (e) {
+        // Network failed, try cache
+        const cachedResponse = await caches.match(request);
+        if (cachedResponse) return cachedResponse;
+        // No cache either, serve offline page
+        return caches.match("/offline.html");
+      }
+    },
+  );
+
   // the manifest excludes config.js (see vite.config.js) since the dist-file differs from the
   // actual config served by the go server. this adds it back with `NetworkFirst`, so that the
   // most recent config from the go server is cached, but the app still works if the network
