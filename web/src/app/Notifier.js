@@ -103,14 +103,12 @@ class Notifier {
   }
 
   async serviceWorkerRegistration() {
-    // getRegistrations() is more reliable than getRegistration() on Safari.
+    // Use getRegistrations() which is more reliable than getRegistration() on Safari.
     const registrations = await navigator.serviceWorker.getRegistrations();
     if (registrations.length > 0) {
       return registrations[0];
     }
-    // Last resort: try ready with a short timeout
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Service worker not ready")), 3000));
-    return Promise.race([navigator.serviceWorker.ready, timeout]);
+    throw new Error("No service worker registration found");
   }
 
   notRequested() {

@@ -25,12 +25,13 @@ import { EVENT_MESSAGE_DELETE, EVENT_MESSAGE_CLEAR, SW_PERIODIC_SYNC_EXTEND_TOKE
  * topics, such as sync topics (st_...).
  */
 export const useConnectionListeners = (account, subscriptions, users, webPushTopics) => {
+  // All subscriptions always get WebSocket connections. Web Push is an additional
+  // layer for background notifications; it must not replace WebSocket, because
+  // the push subscription can fail (e.g. Safari NotAllowedError) leaving topics
+  // with no notification path at all.
   const wsSubscriptions = useMemo(
-    () => (subscriptions && webPushTopics ? subscriptions.filter((s) => !webPushTopics.includes(s.topic)) : []),
-    // wsSubscriptions should stay stable unless the list of subscription IDs changes. Without the memo, the connection
-    // listener calls a refresh for no reason. This isn't a problem due to the makeConnectionId, but it triggers an
-    // unnecessary recomputation for every received message.
-    [JSON.stringify({ subscriptions: subscriptions?.map(({ id }) => id), webPushTopics })],
+    () => subscriptions ?? [],
+    [JSON.stringify(subscriptions?.map(({ id }) => id))],
   );
 
   // Register listeners for incoming messages, and connection state changes
