@@ -1,20 +1,34 @@
 import Connection from "./Connection";
 import { hashCode } from "./utils";
 
-const makeConnectionId = (subscription, user) =>
-  user ? hashCode(`${subscription.id}|${user.username}|${user.password ?? ""}|${user.token ?? ""}`) : hashCode(`${subscription.id}`);
+/**
+ * Generates a connection group key from baseUrl + user credentials.
+ * Subscriptions with the same key share a single WebSocket connection.
+ */
+const makeConnectionGroupKey = (baseUrl, user) => {
+  if (user) {
+    return hashCode(`${baseUrl}|${user.username}|${user.password ?? ""}|${user.token ?? ""}`);
+  }
+  return hashCode(`${baseUrl}|anonymous`);
+};
 
 /**
  * The connection manager keeps track of active connections (WebSocket connections, see Connection).
  *
+ * Subscriptions are grouped by (baseUrl, user credentials). All subscriptions in the same group
+ * share a single WebSocket connection using the server's comma-separated topic support
+ * (e.g. wss://ntfy.sh/topic1,topic2/topic3/ws).
+ *
  * Its refresh() method reconciles state changes with the target state by closing/opening connections
- * as required. This is done pretty much exactly the same way as in the Android app.
+ * as required.
  */
 class ConnectionManager {
   constructor() {
-    this.connections = new Map(); // ConnectionId -> Connection (hash, see below)
-    this.stateListener = null; // Fired when connection state changes
-    this.messageListener = null; // Fired when new notifications arrive
+    this.connections = new Map(); // groupKey -> Connection
+    this.groupSubscriptions = new Map(); // groupKey -> Array<{subscriptionId, topic, since}>
+    this.sinceMap = new Map(); // subscriptionId -> latest since (persists across reconnects)
+    this.stateListener = null;
+    this.messageListener = null;
   }
 
   registerStateListener(listener) {
@@ -34,61 +48,75 @@ class ConnectionManager {
   }
 
   /**
-   * This function figures out which websocket connections should be running by comparing the
-   * current state of the world (connections) with the target state (targetIds).
+   * Reconciles current connections with the target subscription state.
    *
-   * It uses a "connectionId", which is sha256($subscriptionId|$username|$password) to identify
-   * connections. If any of them change, the connection is closed/replaced.
+   * Groups subscriptions by (baseUrl, user). Each group gets one shared WebSocket connection.
+   * When a group's membership changes, the old connection is closed and a new one is created
+   * with the latest since values.
    */
   async refresh(subscriptions, users) {
     if (!subscriptions || !users) {
       return;
     }
     console.log(`[ConnectionManager] Refreshing connections`);
-    const subscriptionsWithUsersAndConnectionId = subscriptions.map((s) => {
-      const [user] = users.filter((u) => u.baseUrl === s.baseUrl);
-      const connectionId = makeConnectionId(s, user);
-      return { ...s, user, connectionId };
-    });
 
-    const targetIds = subscriptionsWithUsersAndConnectionId.map((s) => s.connectionId);
-    const deletedIds = Array.from(this.connections.keys()).filter((id) => !targetIds.includes(id));
-
-    // Create and add new connections
-    subscriptionsWithUsersAndConnectionId.forEach((subscription) => {
-      const subscriptionId = subscription.id;
-      const { connectionId } = subscription;
-      const added = !this.connections.get(connectionId);
-      if (added) {
-        const { baseUrl, topic, user } = subscription;
-        const since = subscription.last;
-        const connection = new Connection(
-          connectionId,
-          subscriptionId,
-          baseUrl,
-          topic,
-          user,
-          since,
-          (subId, notification) => this.notificationReceived(subId, notification),
-          (subId, state) => this.stateChanged(subId, state),
-        );
-        this.connections.set(connectionId, connection);
-        console.log(
-          `[ConnectionManager] Starting new connection ${connectionId} (subscription ${subscriptionId} with user ${
-            user ? user.username : "anonymous"
-          })`,
-        );
-        connection.start();
+    // Build target groups: groupKey -> Array<{subscriptionId, topic, since}>
+    const targetGroups = new Map();
+    for (const sub of subscriptions) {
+      const user = users.find((u) => u.baseUrl === sub.baseUrl);
+      const groupKey = makeConnectionGroupKey(sub.baseUrl, user);
+      if (!targetGroups.has(groupKey)) {
+        targetGroups.set(groupKey, { baseUrl: sub.baseUrl, user, subs: [] });
       }
-    });
+      const since = this.sinceMap.get(sub.id) ?? sub.last;
+      targetGroups.get(groupKey).subs.push({
+        subscriptionId: sub.id,
+        topic: sub.topic,
+        since,
+      });
+    }
 
-    // Delete old connections
-    deletedIds.forEach((id) => {
-      console.log(`[ConnectionManager] Closing connection ${id}`);
-      const connection = this.connections.get(id);
-      this.connections.delete(id);
-      connection.close();
-    });
+    // Close connections for groups that no longer exist or have changed
+    for (const [groupKey, connection] of this.connections) {
+      const target = targetGroups.get(groupKey);
+      const currentSubIds = this.groupSubscriptions.get(groupKey)?.map((s) => s.subscriptionId).sort() ?? [];
+      const targetSubIds = target?.subs.map((s) => s.subscriptionId).sort() ?? [];
+
+      const groupChanged =
+        !target ||
+        currentSubIds.length !== targetSubIds.length ||
+        currentSubIds.some((id, i) => id !== targetSubIds[i]);
+
+      if (groupChanged) {
+        console.log(`[ConnectionManager] Closing connection ${groupKey} (group changed)`);
+        connection.close();
+        this.connections.delete(groupKey);
+        this.groupSubscriptions.delete(groupKey);
+      }
+    }
+
+    // Create connections for new or changed groups
+    for (const [groupKey, { baseUrl, user, subs }] of targetGroups) {
+      if (this.connections.has(groupKey)) {
+        continue; // Already connected with correct membership
+      }
+      const connection = new Connection(
+        groupKey,
+        subs,
+        baseUrl,
+        user,
+        (subId, notification) => this.notificationReceived(subId, notification),
+        (subId, state) => this.stateChanged(subId, state),
+      );
+      this.connections.set(groupKey, connection);
+      this.groupSubscriptions.set(groupKey, subs);
+      console.log(
+        `[ConnectionManager] Starting new connection ${groupKey} (${subs.length} topic(s), user: ${
+          user ? user.username : "anonymous"
+        })`,
+      );
+      connection.start();
+    }
   }
 
   stateChanged(subscriptionId, state) {
@@ -102,6 +130,10 @@ class ConnectionManager {
   }
 
   notificationReceived(subscriptionId, notification) {
+    // Persist the latest since for this subscription across reconnects
+    if (notification.id) {
+      this.sinceMap.set(subscriptionId, notification.id);
+    }
     if (this.messageListener) {
       try {
         this.messageListener(subscriptionId, notification);

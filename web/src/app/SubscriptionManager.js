@@ -188,10 +188,23 @@ export class SubscriptionManager {
       .toArray();
   }
 
-  /** Adds notification, or returns false if it already exists */
+  /**
+   * Adds notification, or returns false if it already exists and is already marked new.
+   * If the notification exists but was added by the Poller (new: 0), upgrades it to new: 1
+   * and returns true so the caller triggers a desktop notification.
+   */
   async addNotification(subscriptionId, notification) {
+    if (notification.event === EVENT_MESSAGE_DELETE || notification.event === EVENT_MESSAGE_CLEAR) {
+      return false;
+    }
     const exists = await this.db.notifications.get(notification.id);
-    if (exists || notification.event === EVENT_MESSAGE_DELETE || notification.event === EVENT_MESSAGE_CLEAR) {
+    if (exists) {
+      // Notification already in DB — upgrade to "new" if the Poller inserted it first
+      if (exists.new !== 1) {
+        await this.db.notifications.update(notification.id, { new: 1 });
+        await this.db.subscriptions.update(subscriptionId, { last: notification.id });
+        return true;
+      }
       return false;
     }
     try {
@@ -216,14 +229,22 @@ export class SubscriptionManager {
     return true;
   }
 
-  /** Adds/replaces notifications, will not throw if they exist */
+  /** Adds/replaces notifications, will not throw if they exist.
+   *  Preserves the `new` flag of existing notifications so the Poller
+   *  does not silently clear unread badges. */
   async addNotifications(subscriptionId, notifications) {
-    const notificationsWithSubscriptionId = notifications.map((notification) => ({
-      ...messageWithSequenceId(notification),
-      subscriptionId,
-    }));
+    const notificationsToAdd = await Promise.all(
+      notifications.map(async (notification) => {
+        const existing = await this.db.notifications.get(notification.id);
+        return {
+          ...messageWithSequenceId(notification),
+          subscriptionId,
+          new: existing?.new ?? 0,
+        };
+      }),
+    );
     const lastNotificationId = notifications.at(-1).id;
-    await this.db.notifications.bulkPut(notificationsWithSubscriptionId);
+    await this.db.notifications.bulkPut(notificationsToAdd);
     await this.db.subscriptions.update(subscriptionId, {
       last: lastNotificationId,
     });

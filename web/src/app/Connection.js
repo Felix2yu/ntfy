@@ -1,5 +1,5 @@
 /* eslint-disable max-classes-per-file */
-import { basicAuth, bearerAuth, encodeBase64Url, topicShortUrl, topicUrlWs } from "./utils";
+import { basicAuth, bearerAuth, encodeBase64Url, topicShortUrl, topicUrlWsMulti } from "./utils";
 import { EVENT_OPEN, isNotificationEvent } from "./events";
 
 const retryBackoffSeconds = [5, 10, 20, 30, 60, 120];
@@ -11,55 +11,79 @@ export class ConnectionState {
 }
 
 /**
- * A connection contains a single WebSocket connection for one topic. It handles its connection
- * status itself, including reconnect attempts and backoff.
+ * A connection manages a single WebSocket connection for one or more topics on the same
+ * server with the same credentials. Messages are routed to the correct subscription by topic.
  *
- * Incoming messages and state changes are forwarded via listeners.
+ * Handles connection status, reconnect attempts, and backoff.
  */
 class Connection {
-  constructor(connectionId, subscriptionId, baseUrl, topic, user, since, onNotification, onStateChanged) {
+  constructor(connectionId, subscriptions, baseUrl, user, onNotification, onStateChanged) {
     this.connectionId = connectionId;
-    this.subscriptionId = subscriptionId;
     this.baseUrl = baseUrl;
-    this.topic = topic;
     this.user = user;
-    this.since = since;
-    this.shortUrl = topicShortUrl(baseUrl, topic);
     this.onNotification = onNotification;
     this.onStateChanged = onStateChanged;
     this.ws = null;
     this.retryCount = 0;
     this.retryTimeout = null;
+
+    // subscriptions: Array<{subscriptionId, topic, since}>
+    // Build lookup maps
+    this.topicToSubscriptionIds = new Map(); // topic -> Set<subscriptionId>
+    this.sinceMap = new Map(); // topic -> since
+    this.subscriptionIds = new Set(); // all subscriptionIds in this connection
+
+    for (const sub of subscriptions) {
+      this.subscriptionIds.add(sub.subscriptionId);
+      if (!this.topicToSubscriptionIds.has(sub.topic)) {
+        this.topicToSubscriptionIds.set(sub.topic, new Set());
+      }
+      this.topicToSubscriptionIds.get(sub.topic).add(sub.subscriptionId);
+      this.sinceMap.set(sub.topic, sub.since);
+    }
+
+    this.shortUrl = topicShortUrl(baseUrl, subscriptions[0].topic);
+    if (subscriptions.length > 1) {
+      this.shortUrl += ` (+${subscriptions.length - 1} more)`;
+    }
   }
 
   start() {
-    // Don't fetch old messages; we do that as a poll() when adding a subscription;
-    // we don't want to re-trigger the main view re-render potentially hundreds of times.
-
     const wsUrl = this.wsUrl();
-    console.log(`[Connection, ${this.shortUrl}, ${this.connectionId}] Opening connection to ${wsUrl}`);
+    const topicCount = this.topicToSubscriptionIds.size;
+    console.log(`[Connection, ${this.shortUrl}, ${this.connectionId}] Opening connection to ${wsUrl} (${topicCount} topic(s))`);
 
     this.ws = new WebSocket(wsUrl);
     this.ws.onopen = (event) => {
       console.log(`[Connection, ${this.shortUrl}, ${this.connectionId}] Connection established`, event);
       this.retryCount = 0;
-      this.onStateChanged(this.subscriptionId, ConnectionState.Connected);
+      for (const subId of this.subscriptionIds) {
+        this.onStateChanged(subId, ConnectionState.Connected);
+      }
     };
     this.ws.onmessage = (event) => {
-      console.log(`[Connection, ${this.shortUrl}, ${this.connectionId}] Message received from server: ${event.data}`);
       try {
         const data = JSON.parse(event.data);
         if (data.event === EVENT_OPEN) {
           return;
         }
-        // Accept message, message_delete, and message_clear events
         const relevantAndValid = isNotificationEvent(data.event) && "id" in data && "time" in data;
         if (!relevantAndValid) {
           console.log(`[Connection, ${this.shortUrl}, ${this.connectionId}] Unexpected message. Ignoring.`);
           return;
         }
-        this.since = data.id;
-        this.onNotification(this.subscriptionId, data);
+        // Route message to the correct subscription(s) by topic
+        const topic = data.topic;
+        const subscriptionIds = this.topicToSubscriptionIds.get(topic);
+        if (subscriptionIds) {
+          // Update since for this topic
+          this.sinceMap.set(topic, data.id);
+          for (const subId of subscriptionIds) {
+            this.onNotification(subId, data);
+          }
+        } else {
+          console.log(`[Connection, ${this.shortUrl}, ${this.connectionId}] Message for unknown topic: ${topic}`);
+        }
       } catch (e) {
         console.log(`[Connection, ${this.shortUrl}, ${this.connectionId}] Error handling message: ${e}`);
       }
@@ -75,7 +99,9 @@ class Connection {
         this.retryCount += 1;
         console.log(`[Connection, ${this.shortUrl}, ${this.connectionId}] Connection died, retrying in ${retrySeconds} seconds`);
         this.retryTimeout = setTimeout(() => this.start(), retrySeconds * 1000);
-        this.onStateChanged(this.subscriptionId, ConnectionState.Connecting);
+        for (const subId of this.subscriptionIds) {
+          this.onStateChanged(subId, ConnectionState.Connecting);
+        }
       }
     };
     this.ws.onerror = (event) => {
@@ -99,13 +125,18 @@ class Connection {
 
   wsUrl() {
     const params = [];
-    if (this.since) {
-      params.push(`since=${this.since}`);
+    // Use the minimum since across all topics for the initial connection
+    const sinceValues = Array.from(this.sinceMap.values()).filter(Boolean);
+    if (sinceValues.length > 0) {
+      // Use the earliest since to avoid missing messages
+      const minSince = sinceValues.reduce((a, b) => (a < b ? a : b));
+      params.push(`since=${minSince}`);
     }
     if (this.user) {
       params.push(`auth=${this.authParam()}`);
     }
-    const wsUrl = topicUrlWs(this.baseUrl, this.topic);
+    const topics = Array.from(this.topicToSubscriptionIds.keys());
+    const wsUrl = topicUrlWsMulti(this.baseUrl, topics);
     return params.length === 0 ? wsUrl : `${wsUrl}?${params.join("&")}`;
   }
 

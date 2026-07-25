@@ -16,6 +16,8 @@ export const expandSecureUrl = (url) => `https://${url}`;
 export const topicUrl = (baseUrl, topic) => `${baseUrl}/${topic}`;
 export const topicUrlWs = (baseUrl, topic) =>
   `${topicUrl(baseUrl, topic)}/ws`.replaceAll("https://", "wss://").replaceAll("http://", "ws://");
+export const topicUrlWsMulti = (baseUrl, topics) =>
+  `${baseUrl}/${topics.join(",")}/ws`.replaceAll("https://", "wss://").replaceAll("http://", "ws://");
 export const topicUrlJson = (baseUrl, topic) => `${topicUrl(baseUrl, topic)}/json`;
 export const topicUrlJsonPoll = (baseUrl, topic) => `${topicUrlJson(baseUrl, topic)}?poll=1`;
 export const topicUrlJsonPollWithSince = (baseUrl, topic, since) => `${topicUrlJson(baseUrl, topic)}?poll=1&since=${since}`;
