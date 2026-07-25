@@ -22,16 +22,25 @@ class Notifier {
 
     console.log(`[Notifier, ${shortUrl}] Displaying notification ${notification.id}`);
 
-    const registration = await this.serviceWorkerRegistration();
-    await registration.showNotification(
-      ...toNotificationParams({
-        message: notification,
-        defaultTitle,
-        topicRoute: new URL(routes.forSubscription(subscription), window.location.origin).toString(),
-        baseUrl: subscription.baseUrl,
-        topic: subscription.topic,
-      }),
-    );
+    const topicRoute = new URL(routes.forSubscription(subscription), window.location.origin).toString();
+    const params = toNotificationParams({
+      message: notification,
+      defaultTitle,
+      topicRoute,
+      baseUrl: subscription.baseUrl,
+      topic: subscription.topic,
+    });
+
+    // Try Service Worker first (standard path); fall back to direct Notification API
+    // for Safari macOS where the SW may never become ready.
+    try {
+      const registration = await this.serviceWorkerRegistration();
+      await registration.showNotification(...params);
+    } catch (e) {
+      console.log(`[Notifier] SW showNotification failed, using direct Notification API`, e);
+      const [title, options] = params;
+      new Notification(title, options); // eslint-disable-line no-new
+    }
   }
 
   async cancel(subscription, notification) {
@@ -46,7 +55,7 @@ class Notifier {
       const notifications = await registration.getNotifications({ tag });
       notifications.forEach((n) => n.close());
     } catch (e) {
-      console.log(`[Notifier] Error cancelling notification`, e);
+      // SW not available (e.g. Safari macOS) — nothing to cancel
     }
   }
 
