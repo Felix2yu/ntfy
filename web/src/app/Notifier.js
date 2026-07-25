@@ -94,11 +94,15 @@ class Notifier {
   }
 
   async serviceWorkerRegistration() {
+    // Safari PWA: getRegistration() may return null even when the SW is registered.
+    // Use ready (with a timeout) as a more reliable fallback.
     const registration = await navigator.serviceWorker.getRegistration();
-    if (!registration) {
-      throw new Error("No service worker registration found");
+    if (registration) {
+      return registration;
     }
-    return registration;
+    const ready = navigator.serviceWorker.ready;
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Service worker not ready")), 3000));
+    return Promise.race([ready, timeout]);
   }
 
   notRequested() {
