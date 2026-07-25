@@ -4,6 +4,10 @@ import { registerSW as viteRegisterSW } from "virtual:pwa-register";
 // fetch new sw every hour, i.e. update app every hour while running
 const intervalMS = 60 * 60 * 1000;
 
+let cachedRegistration = null;
+
+export const getCachedRegistration = () => cachedRegistration;
+
 // https://vite-pwa-org.netlify.app/guide/periodic-sw-updates.html
 const registerSW = () => {
   console.log("[ServiceWorker] Registering service worker");
@@ -20,6 +24,8 @@ const registerSW = () => {
         console.warn("[ServiceWorker] No registration returned");
         return;
       }
+
+      cachedRegistration = registration;
 
       setInterval(async () => {
         if (registration.installing || navigator?.onLine === false) return;

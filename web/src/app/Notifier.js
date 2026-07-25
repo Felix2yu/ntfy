@@ -1,5 +1,6 @@
 import { playSound, topicDisplayName, topicShortUrl, urlB64ToUint8Array } from "./utils";
 import { notificationTag, toNotificationParams } from "./notificationUtils";
+import { getCachedRegistration } from "../registerSW";
 import prefs from "./Prefs";
 import routes from "../components/routes";
 
@@ -103,7 +104,12 @@ class Notifier {
   }
 
   async serviceWorkerRegistration() {
-    // Use getRegistrations() which is more reliable than getRegistration() on Safari.
+    // First try the cached registration from registerSW (most reliable on Safari).
+    const cached = getCachedRegistration();
+    if (cached) {
+      return cached;
+    }
+    // Fallback: try getRegistrations()
     const registrations = await navigator.serviceWorker.getRegistrations();
     if (registrations.length > 0) {
       return registrations[0];
