@@ -104,16 +104,13 @@ class Notifier {
   }
 
   async serviceWorkerRegistration() {
-    // First try the cached registration from registerSW (most reliable on Safari).
+    // Try multiple methods to find the SW registration (Safari PWA quirk).
     const cached = getCachedRegistration();
-    if (cached) {
-      return cached;
-    }
-    // Fallback: try getRegistrations()
+    if (cached) return cached;
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) return reg;
     const registrations = await navigator.serviceWorker.getRegistrations();
-    if (registrations.length > 0) {
-      return registrations[0];
-    }
+    if (registrations.length > 0) return registrations[0];
     throw new Error("No service worker registration found");
   }
 
