@@ -22,6 +22,7 @@ import {
   FormControl,
   LinearProgress,
   Box,
+  Alert,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -317,7 +318,7 @@ const ClearDialog = (props) => {
       }, 2000);
     } catch (e) {
       console.error(`[ClearDialog] Error clearing notifications`, e);
-      setResult({ ok: false });
+      setResult({ ok: false, error: e?.message || String(e) });
       setClearing(false);
     }
   };
@@ -332,7 +333,10 @@ const ClearDialog = (props) => {
     if (clearing) return t("clear_dialog_clearing");
     if (result?.ok && result.count === 0) return t("clear_dialog_no_messages");
     if (result?.ok) return t("clear_dialog_done_count", { count: result.count });
-    if (result && !result.ok) return t("clear_dialog_error");
+    if (result && !result.ok) {
+      const msg = t("clear_dialog_error");
+      return result.error ? `${msg}: ${result.error}` : msg;
+    }
     return "";
   };
 
@@ -357,9 +361,9 @@ const ClearDialog = (props) => {
           </FormControl>
         )}
         {result && !result.ok && (
-          <DialogContentText color="error" sx={{ mt: 1 }}>
-            {t("clear_dialog_error")}
-          </DialogContentText>
+          <Alert severity="error" sx={{ mt: 1 }} onClose={() => setResult(null)}>
+            {t("clear_dialog_error")}{result.error ? `: ${result.error}` : ""}
+          </Alert>
         )}
       </DialogContent>
       <DialogFooter status={statusMessage()}>

@@ -80,7 +80,54 @@ class Api {
   }
 
   async clearTopic(baseUrl, topic, since) {
-    const messages = await this.poll(baseUrl, topic, since);
+    const user = await userManager.get(baseUrl);
+    const headers = maybeWithAuth({}, user);
+    const shortUrl = topicShortUrl(baseUrl, topic);
+    // Fetch messages directly to handle HTTP errors properly
+    const pollUrl = since ? topicUrlJsonPollWithSince(baseUrl, topic, since) : topicUrlJsonPoll(baseUrl, topic);
+    console.log(`[Api] clearTopic polling ${pollUrl}`);
+    const response = await fetch(pollUrl, { headers });
+    if (!response.ok) {
+      const errText = await response.text().catch(() => `${response.status}`);
+      console.error(`[Api, ${shortUrl}] clearTopic poll failed: ${response.status} ${errText}`);
+      throw new Error(`Poll returned ${response.status}`);
+    }
+    const messages = [];
+    const utf8Decoder = new TextDecoder("utf-8");
+    const reader = response.body.getReader();
+    let { value: chunk, done: readerDone } = await reader.read();
+    chunk = chunk ? utf8Decoder.decode(chunk) : "";
+    const re = /\n|\r|\r\n/gm;
+    let startIndex = 0;
+    for (;;) {
+      const match = re.exec(chunk);
+      if (!match) {
+        if (readerDone) break;
+        const remainder = chunk.substr(startIndex);
+        ({ value: chunk, done: readerDone } = await reader.read());
+        chunk = remainder + (chunk ? utf8Decoder.decode(chunk) : "");
+        startIndex = 0;
+        re.lastIndex = 0;
+        continue;
+      }
+      const line = chunk.substring(startIndex, match.index);
+      startIndex = re.lastIndex;
+      if (!line) continue;
+      try {
+        const msg = JSON.parse(line);
+        if (msg.id) messages.push(msg);
+      } catch (e) {
+        console.warn(`[Api, ${shortUrl}] clearTopic skipping invalid line: ${line}`);
+      }
+    }
+    if (startIndex < chunk.length) {
+      try {
+        const msg = JSON.parse(chunk.substr(startIndex));
+        if (msg.id) messages.push(msg);
+      } catch (e) {
+        console.warn(`[Api, ${shortUrl}] clearTopic skipping trailing invalid line`);
+      }
+    }
     const latestBySeqId = {};
     messages.forEach((m) => {
       const seqId = m.sequence_id || m.id;
@@ -91,16 +138,18 @@ class Api {
     const toDelete = Object.values(latestBySeqId).filter(
       (m) => !m.event || m.event === 'message',
     );
-    console.log(`[Api] Clearing ${toDelete.length} messages from ${topicUrl(baseUrl, topic)}`);
+    console.log(`[Api, ${shortUrl}] clearTopic deleting ${toDelete.length} of ${messages.length} polled messages`);
     if (toDelete.length === 0) return 0;
     const results = await Promise.allSettled(
       toDelete.map((m) => this.delete(baseUrl, topic, m.id)),
     );
     const failed = results.filter((r) => r.status === 'rejected');
     if (failed.length > 0) {
-      console.error(`[Api] Failed to delete ${failed.length}/${toDelete.length} messages`, failed);
+      console.error(`[Api, ${shortUrl}] clearTopic failed to delete ${failed.length}/${toDelete.length}`, failed);
     }
-    return toDelete.length - failed.length;
+    const succeeded = toDelete.length - failed.length;
+    console.log(`[Api, ${shortUrl}] clearTopic done, succeeded: ${succeeded}`);
+    return succeeded;
   }
 
   /**
