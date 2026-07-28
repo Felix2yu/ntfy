@@ -16,6 +16,12 @@ import {
   IconButton,
   ListItemIcon,
   useTheme,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  FormControl,
+  LinearProgress,
+  Box,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -52,6 +58,7 @@ export const SubscriptionPopup = (props) => {
   const [reserveEditDialogOpen, setReserveEditDialogOpen] = useState(false);
   const [reserveDeleteDialogOpen, setReserveDeleteDialogOpen] = useState(false);
   const [showPublishError, setShowPublishError] = useState(false);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const { subscription } = props;
   const placement = props.placement ?? "left";
   const reservations = account?.reservations || [];
@@ -145,9 +152,8 @@ export const SubscriptionPopup = (props) => {
     }
   };
 
-  const handleClearAll = async () => {
-    console.log(`[SubscriptionPopup] Deleting all notifications from ${props.subscription.id}`);
-    await subscriptionManager.deleteNotifications(props.subscription.id);
+  const handleClearAll = () => {
+    setClearDialogOpen(true);
   };
 
   const handleSetMutedUntil = async (mutedUntil) => {
@@ -259,6 +265,7 @@ export const SubscriptionPopup = (props) => {
           onClose={() => setShowPublishError(false)}
           message={t("message_bar_error_publishing")}
         />
+        <ClearDialog open={clearDialogOpen} subscription={subscription} onClose={() => setClearDialogOpen(false)} />
         <DisplayNameDialog open={displayNameDialogOpen} subscription={subscription} onClose={() => setDisplayNameDialogOpen(false)} />
         {showReservationAdd && (
           <ReserveAddDialog
@@ -285,6 +292,89 @@ export const SubscriptionPopup = (props) => {
         )}
       </Portal>
     </>
+  );
+};
+
+const ClearDialog = (props) => {
+  const theme = useTheme();
+  const { t } = useTranslation();
+  const { subscription, open, onClose } = props;
+  const [range, setRange] = useState("24h");
+  const [clearing, setClearing] = useState(false);
+  const [result, setResult] = useState(null);
+  const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
+
+  const handleClear = async () => {
+    setClearing(true);
+    try {
+      const count = await api.clearTopic(subscription.baseUrl, subscription.topic, range);
+      await subscriptionManager.deleteNotifications(subscription.id);
+      setResult({ ok: true, count });
+      setTimeout(() => {
+        setClearing(false);
+        setResult(null);
+        onClose();
+      }, 2000);
+    } catch (e) {
+      console.error(`[ClearDialog] Error clearing notifications`, e);
+      setResult({ ok: false });
+      setClearing(false);
+    }
+  };
+
+  const handleClose = () => {
+    if (clearing) return;
+    setResult(null);
+    onClose();
+  };
+
+  const statusMessage = () => {
+    if (clearing) return t("clear_dialog_clearing");
+    if (result?.ok) return t("clear_dialog_done_count", { count: result.count });
+    if (result && !result.ok) return t("clear_dialog_error");
+    return "";
+  };
+
+  return (
+    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth fullScreen={fullScreen}>
+      <DialogTitle>{t("clear_dialog_title")}</DialogTitle>
+      <DialogContent>
+        <DialogContentText>{t("clear_dialog_description")}</DialogContentText>
+        {clearing ? (
+          <Box sx={{ mt: 2 }}>
+            <LinearProgress />
+          </Box>
+        ) : (
+          <FormControl sx={{ mt: 1 }}>
+            <RadioGroup value={range} onChange={(e) => setRange(e.target.value)}>
+              <FormControlLabel value="1h" control={<Radio />} label={t("clear_dialog_option_1h")} />
+              <FormControlLabel value="24h" control={<Radio />} label={t("clear_dialog_option_24h")} />
+              <FormControlLabel value="7d" control={<Radio />} label={t("clear_dialog_option_7d")} />
+              <FormControlLabel value="30d" control={<Radio />} label={t("clear_dialog_option_30d")} />
+              <FormControlLabel value="all" control={<Radio />} label={t("clear_dialog_option_all")} />
+            </RadioGroup>
+          </FormControl>
+        )}
+        {result && !result.ok && (
+          <DialogContentText color="error" sx={{ mt: 1 }}>
+            {t("clear_dialog_error")}
+          </DialogContentText>
+        )}
+      </DialogContent>
+      <DialogFooter status={statusMessage()}>
+        <Button onClick={handleClose} disabled={clearing}>
+          {t("common_close")}
+        </Button>
+        <Button
+          onClick={handleClear}
+          disabled={clearing || result?.ok}
+          variant="contained"
+          color="error"
+        >
+          {clearing ? t("clear_dialog_clearing") : t("clear_dialog_clear")}
+        </Button>
+      </DialogFooter>
+    </Dialog>
   );
 };
 

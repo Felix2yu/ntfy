@@ -79,6 +79,30 @@ class Api {
     });
   }
 
+  async clearTopic(baseUrl, topic, since) {
+    const messages = await this.poll(baseUrl, topic, since);
+    const latestBySeqId = {};
+    messages.forEach((m) => {
+      const seqId = m.sequence_id || m.id;
+      if (!(seqId in latestBySeqId) || m.time >= latestBySeqId[seqId].time) {
+        latestBySeqId[seqId] = m;
+      }
+    });
+    const toDelete = Object.values(latestBySeqId).filter(
+      (m) => !m.event || m.event === 'message',
+    );
+    console.log(`[Api] Clearing ${toDelete.length} messages from ${topicUrl(baseUrl, topic)}`);
+    if (toDelete.length === 0) return 0;
+    const results = await Promise.allSettled(
+      toDelete.map((m) => this.delete(baseUrl, topic, m.id)),
+    );
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length > 0) {
+      console.error(`[Api] Failed to delete ${failed.length}/${toDelete.length} messages`, failed);
+    }
+    return toDelete.length - failed.length;
+  }
+
   /**
    * Publishes to a topic using XMLHttpRequest (XHR), and returns a Promise with the active request.
    * Unfortunately, fetch() does not support a progress hook, which is why XHR has to be used.
