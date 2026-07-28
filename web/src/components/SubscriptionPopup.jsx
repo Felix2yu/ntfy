@@ -349,8 +349,8 @@ const ClearDialog = (props) => {
             <RadioGroup value={range} onChange={(e) => setRange(e.target.value)}>
               <FormControlLabel value="1h" control={<Radio />} label={t("clear_dialog_option_1h")} />
               <FormControlLabel value="24h" control={<Radio />} label={t("clear_dialog_option_24h")} />
-              <FormControlLabel value="7d" control={<Radio />} label={t("clear_dialog_option_7d")} />
-              <FormControlLabel value="30d" control={<Radio />} label={t("clear_dialog_option_30d")} />
+              <FormControlLabel value="168h" control={<Radio />} label={t("clear_dialog_option_7d")} />
+              <FormControlLabel value="720h" control={<Radio />} label={t("clear_dialog_option_30d")} />
               <FormControlLabel value="all" control={<Radio />} label={t("clear_dialog_option_all")} />
             </RadioGroup>
           </FormControl>

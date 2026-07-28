@@ -21,6 +21,7 @@ import api from "../app/Api";
 import routes from "./routes";
 import db from "../app/db";
 import { topicDisplayName } from "../app/utils";
+import { EVENT_MESSAGE, EVENT_MESSAGE_DELETE } from "../app/events";
 import { fadeNavigate } from "../app/transition";
 import Navigation from "./Navigation";
 import accountApi from "../app/AccountApi";
@@ -149,8 +150,17 @@ const HistoryButtons = (props) => {
     setAnchorEl(null);
     try {
       const messages = await api.poll(subscription.baseUrl, subscription.topic, since);
-      if (messages.length > 0) {
-        await subscriptionManager.addNotifications(subscription.id, messages);
+      if (messages.length === 0) return;
+      const latestBySeqId = {};
+      messages.forEach((m) => {
+        const seqId = m.sequence_id || m.id;
+        if (!(seqId in latestBySeqId) || m.time >= latestBySeqId[seqId].time) {
+          latestBySeqId[seqId] = m;
+        }
+      });
+      const toAdd = Object.values(latestBySeqId).filter((n) => !n.event || n.event === EVENT_MESSAGE);
+      if (toAdd.length > 0) {
+        await subscriptionManager.addNotifications(subscription.id, toAdd);
       }
     } catch (e) {
       console.error("[ActionBar] Failed to load history:", e);
