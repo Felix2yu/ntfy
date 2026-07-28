@@ -299,7 +299,7 @@ const ClearDialog = (props) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { subscription, open, onClose } = props;
-  const [range, setRange] = useState("24h");
+  const [range, setRange] = useState("all");
   const [clearing, setClearing] = useState(false);
   const [result, setResult] = useState(null);
   const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
@@ -330,6 +330,7 @@ const ClearDialog = (props) => {
 
   const statusMessage = () => {
     if (clearing) return t("clear_dialog_clearing");
+    if (result?.ok && result.count === 0) return t("clear_dialog_no_messages");
     if (result?.ok) return t("clear_dialog_done_count", { count: result.count });
     if (result && !result.ok) return t("clear_dialog_error");
     return "";

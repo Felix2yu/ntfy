@@ -15,6 +15,7 @@
   "clear_dialog_clear": "立即清除",
   "clear_dialog_clearing": "正在清除…",
   "clear_dialog_done_count": "已清除 {{count}} 条通知",
+  "clear_dialog_no_messages": "该时间范围内没有找到消息",
   "clear_dialog_error": "清除通知失败",
   "action_bar_unsubscribe": "取消订阅",
   "action_bar_toggle_action_menu": "开启或关闭操作菜单",

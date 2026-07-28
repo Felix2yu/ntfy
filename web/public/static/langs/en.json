@@ -67,6 +67,7 @@
   "clear_dialog_clear": "Clear now",
   "clear_dialog_clearing": "Clearing…",
   "clear_dialog_done_count": "Cleared {{count}} notification(s)",
+  "clear_dialog_no_messages": "No messages found in this time range",
   "clear_dialog_error": "Failed to clear notifications",
   "action_bar_mute_notifications": "Mute notifications",
   "action_bar_unmute_notifications": "Unmute notifications",
