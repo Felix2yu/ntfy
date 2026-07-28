@@ -140,26 +140,34 @@ class Api {
     );
     console.log(`[Api, ${shortUrl}] clearTopic deleting ${toDelete.length} of ${messages.length} polled messages`);
     if (toDelete.length === 0) return 0;
-    const CONCURRENCY = 5;
+    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     const failedMessages = [];
-    for (let i = 0; i < toDelete.length; i += CONCURRENCY) {
-      const batch = toDelete.slice(i, i + CONCURRENCY);
-      const results = await Promise.allSettled(
-        batch.map((m) => this.delete(baseUrl, topic, m.id)),
-      );
-      const batchFailures = [];
-      results.forEach((r, j) => {
-        if (r.status === 'rejected') {
-          failedMessages.push(batch[j]);
-          batchFailures.push(batch[j]);
+    for (const msg of toDelete) {
+      let ok = false;
+      for (let retry = 0; retry < 5; retry++) {
+        if (retry > 0) {
+          const wait = 5000 * Math.pow(2, retry - 1);
+          console.log(`[Api, ${shortUrl}] clearTopic retry ${retry + 1}/5 for ${msg.id} after ${wait}ms`);
+          await delay(wait);
         }
-      });
-      if (batchFailures.length > 0) {
-        console.warn(`[Api, ${shortUrl}] clearTopic batch ${Math.floor(i / CONCURRENCY) + 1}: ${batchFailures.length}/${batch.length} failed`);
+        try {
+          await this.delete(baseUrl, topic, msg.id);
+          ok = true;
+          break;
+        } catch (e) {
+          const isRateLimit = e.message && e.message.includes('42901');
+          if (!isRateLimit) {
+            console.error(`[Api, ${shortUrl}] clearTopic failed for ${msg.id}: ${e.message}`);
+            break;
+          }
+        }
+      }
+      if (!ok) {
+        failedMessages.push(msg);
       }
     }
     if (failedMessages.length > 0) {
-      console.error(`[Api, ${shortUrl}] clearTopic failed to delete ${failedMessages.length}/${toDelete.length} after all batches`);
+      console.error(`[Api, ${shortUrl}] clearTopic failed to delete ${failedMessages.length}/${toDelete.length}`);
     }
     const succeeded = toDelete.length - failedMessages.length;
     console.log(`[Api, ${shortUrl}] clearTopic done, succeeded: ${succeeded}/${toDelete.length}`);
