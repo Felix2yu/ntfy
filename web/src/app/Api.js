@@ -140,15 +140,29 @@ class Api {
     );
     console.log(`[Api, ${shortUrl}] clearTopic deleting ${toDelete.length} of ${messages.length} polled messages`);
     if (toDelete.length === 0) return 0;
-    const results = await Promise.allSettled(
-      toDelete.map((m) => this.delete(baseUrl, topic, m.id)),
-    );
-    const failed = results.filter((r) => r.status === 'rejected');
-    if (failed.length > 0) {
-      console.error(`[Api, ${shortUrl}] clearTopic failed to delete ${failed.length}/${toDelete.length}`, failed);
+    const CONCURRENCY = 5;
+    const failedMessages = [];
+    for (let i = 0; i < toDelete.length; i += CONCURRENCY) {
+      const batch = toDelete.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map((m) => this.delete(baseUrl, topic, m.id)),
+      );
+      const batchFailures = [];
+      results.forEach((r, j) => {
+        if (r.status === 'rejected') {
+          failedMessages.push(batch[j]);
+          batchFailures.push(batch[j]);
+        }
+      });
+      if (batchFailures.length > 0) {
+        console.warn(`[Api, ${shortUrl}] clearTopic batch ${Math.floor(i / CONCURRENCY) + 1}: ${batchFailures.length}/${batch.length} failed`);
+      }
     }
-    const succeeded = toDelete.length - failed.length;
-    console.log(`[Api, ${shortUrl}] clearTopic done, succeeded: ${succeeded}`);
+    if (failedMessages.length > 0) {
+      console.error(`[Api, ${shortUrl}] clearTopic failed to delete ${failedMessages.length}/${toDelete.length} after all batches`);
+    }
+    const succeeded = toDelete.length - failedMessages.length;
+    console.log(`[Api, ${shortUrl}] clearTopic done, succeeded: ${succeeded}/${toDelete.length}`);
     return succeeded;
   }
 
