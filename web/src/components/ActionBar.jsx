@@ -150,6 +150,7 @@ const HistoryButtons = (props) => {
     setAnchorEl(null);
     try {
       const messages = await api.poll(subscription.baseUrl, subscription.topic, since);
+      console.log(`[ActionBar] LoadHistory: polled ${messages.length} messages`);
       if (messages.length === 0) return;
       const latestBySeqId = {};
       messages.forEach((m) => {
@@ -158,7 +159,15 @@ const HistoryButtons = (props) => {
           latestBySeqId[seqId] = m;
         }
       });
-      const toAdd = Object.values(latestBySeqId).filter((n) => !n.event || n.event === EVENT_MESSAGE);
+      const toAdd = Object.values(latestBySeqId).filter((n) => {
+        const keep = !n.event || n.event === EVENT_MESSAGE;
+        if (!keep) console.log(`[ActionBar] LoadHistory: filtering out event=${n.event} seq_id=${n.sequence_id}`);
+        return keep;
+      });
+      console.log(`[ActionBar] LoadHistory: after filter ${toAdd.length} messages to add`);
+      if (toAdd.length > 0) {
+        toAdd.forEach((n) => console.log(`[ActionBar] LoadHistory: adding msg id=${n.id} event=${n.event} seq_id=${n.sequence_id} time=${n.time}`));
+      }
       await subscriptionManager.deleteNotifications(subscription.id);
       if (toAdd.length > 0) {
         await subscriptionManager.addNotifications(subscription.id, toAdd);
