@@ -23,7 +23,7 @@ const initI18n = () =>
         escapeValue: false, // not needed for react as it escapes by default
       },
       backend: {
-        loadPath: "/static/langs/{{lng}}.json",
+        loadPath: "/static/langs/{{lng}}.json?v=" + (window.config?.config_hash || Date.now()),
       },
     });
 
