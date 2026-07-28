@@ -309,9 +309,9 @@ const ClearDialog = (props) => {
     try {
       const count = await api.clearTopic(subscription.baseUrl, subscription.topic, range);
       await subscriptionManager.deleteNotifications(subscription.id);
+      setClearing(false);
       setResult({ ok: true, count });
       setTimeout(() => {
-        setClearing(false);
         setResult(null);
         onClose();
       }, 2000);
