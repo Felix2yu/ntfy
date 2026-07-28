@@ -159,6 +159,7 @@ const HistoryButtons = (props) => {
         }
       });
       const toAdd = Object.values(latestBySeqId).filter((n) => !n.event || n.event === EVENT_MESSAGE);
+      await subscriptionManager.deleteNotifications(subscription.id);
       if (toAdd.length > 0) {
         await subscriptionManager.addNotifications(subscription.id, toAdd);
       }
