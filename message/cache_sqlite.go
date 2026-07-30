@@ -20,8 +20,8 @@ const (
 		WHERE published = 1
 		  AND (message LIKE ? OR title LIKE ?)
 		  AND (topic = ? OR ? = '')
-		  AND time >= ?
-		  AND time <= ?
+		  AND (? = 0 OR time >= ?)
+		  AND (? = 0 OR time <= ?)
 		  AND (priority = ? OR ? = 0)
 		ORDER BY time DESC, id DESC
 		LIMIT ?
@@ -113,6 +113,7 @@ var sqliteQueries = queries{
 	selectStats:                      sqliteSelectStatsQuery,
 	updateStats:                      sqliteUpdateStatsQuery,
 	updateMessageTime:                sqliteUpdateMessageTimeQuery,
+	selectMessagesSearch:             sqliteSelectMessagesSearchQuery,
 }
 
 // NewSQLiteStore creates a SQLite file-backed cache

@@ -12,13 +12,13 @@ const (
 		SELECT mid, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, \"user\", content_type, encoding
 		FROM message
 		WHERE published = TRUE
-		  AND (message ILIKE  OR title ILIKE )
-		  AND (topic =  OR  = '')
-		  AND time >= 
-		  AND time <= 
-		  AND (priority =  OR  = 0)
+		  AND (message ILIKE $1 OR title ILIKE $2)
+		  AND (topic = $3 OR $4 = '')
+		  AND ($5 = 0 OR time >= $6)
+		  AND ($7 = 0 OR time <= $8)
+		  AND (priority = $9 OR $10 = 0)
 		ORDER BY time DESC, id DESC
-		LIMIT 
+		LIMIT $11
 	`
 	postgresInsertMessageQuery = `
 		INSERT INTO message (mid, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, attachment_deleted, sender, user_id, content_type, encoding, published)

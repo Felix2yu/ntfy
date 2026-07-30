@@ -1,7 +1,7 @@
 import api from "./Api";
 import prefs from "./Prefs";
 import subscriptionManager from "./SubscriptionManager";
-import { EVENT_MESSAGE, EVENT_MESSAGE_DELETE } from "./events";
+import { EVENT_MESSAGE, EVENT_MESSAGE_DELETE, EVENT_MESSAGE_CLEAR } from "./events";
 
 const delayMillis = 2000; // 2 seconds
 const intervalMillis = 300000; // 5 minutes
@@ -63,6 +63,17 @@ class Poller {
       console.log(`[Poller] Deleting notifications with deleted sequence IDs for ${subscription.id}`, deletedSequenceIds);
       await Promise.all(
         deletedSequenceIds.map((sequenceId) => subscriptionManager.deleteNotificationBySequenceId(subscription.id, sequenceId)),
+      );
+    }
+
+    // Mark notifications as read for cleared sequences
+    const clearSequenceIds = Object.entries(latestBySequenceId)
+      .filter(([, notification]) => notification.event === EVENT_MESSAGE_CLEAR)
+      .map(([sequenceId]) => sequenceId);
+    if (clearSequenceIds.length > 0) {
+      console.log(`[Poller] Marking cleared notifications as read for ${subscription.id}`, clearSequenceIds);
+      await Promise.all(
+        clearSequenceIds.map((sequenceId) => subscriptionManager.markNotificationReadBySequenceId(subscription.id, sequenceId)),
       );
     }
 

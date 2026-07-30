@@ -336,7 +336,8 @@ func (c *Cache) SearchMessages(params SearchParams) ([]*model.Message, error) {
 		c.queries.selectMessagesSearch,
 		query, query, // message LIKE, title LIKE
 		params.Topic, params.Topic, // topic filter
-		params.Since, params.Until, // time range
+		params.Since, params.Since, // time >= (0 = no filter)
+		params.Until, params.Until, // time <= (0 = no filter)
 		params.Priority, params.Priority, // priority filter
 		params.Limit,
 	)

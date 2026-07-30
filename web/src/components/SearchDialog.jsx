@@ -17,7 +17,7 @@ import {
   Box,
 } from "@mui/material";
 import * as React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import SearchIcon from "@mui/icons-material/Search";
@@ -30,15 +30,21 @@ const SearchDialog = (props) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { dateFormat, timeFormat } = usePrefCache();
-  const { open, onClose, topics } = props;
+  const { open, onClose, topics, selected } = props;
   const [query, setQuery] = useState("");
-  const [topic, setTopic] = useState("");
+  const [topic, setTopic] = useState(selected?.topic || "");
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
   const [priority, setPriority] = useState(0);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (open) {
+      setTopic(selected?.topic || "");
+    }
+  }, [open, selected]);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -49,8 +55,8 @@ const SearchDialog = (props) => {
       const params = {
         q: query.trim(),
         topic: topic || undefined,
-        since: since ? Math.floor(new Date(since).getTime() / 1000) : undefined,
-        until: until ? Math.floor(new Date(until).getTime() / 1000) : undefined,
+        since: since ? Math.floor(new Date(since + "T00:00:00").getTime() / 1000) : undefined,
+        until: until ? Math.floor(new Date(until + "T23:59:59").getTime() / 1000) : undefined,
         priority: priority || undefined,
         limit: 50,
       };
@@ -130,7 +136,7 @@ const SearchDialog = (props) => {
           <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
             <TextField
               label={t("search_dialog_since", "Since (optional)")}
-              type="datetime-local"
+              type="date"
               value={since}
               onChange={(e) => setSince(e.target.value)}
               fullWidth
@@ -139,7 +145,7 @@ const SearchDialog = (props) => {
             />
             <TextField
               label={t("search_dialog_until", "Until (optional)")}
-              type="datetime-local"
+              type="date"
               value={until}
               onChange={(e) => setUntil(e.target.value)}
               fullWidth

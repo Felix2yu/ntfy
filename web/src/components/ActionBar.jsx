@@ -105,7 +105,7 @@ const ActionBar = (props) => {
         {props.selected && <SettingsIcons subscription={props.selected} onUnsubscribe={props.onUnsubscribe} />}
         <ProfileIcon />
       </Toolbar>
-      <SearchDialog open={!!props.searchDialogOpen} onClose={() => props.onSearchDialogClose?.()} topics={props.topics} />
+      <SearchDialog open={!!props.searchDialogOpen} onClose={() => props.onSearchDialogClose?.()} topics={props.topics} selected={props.selected} />
     </AppBar>
   );
 };
