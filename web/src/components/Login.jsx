@@ -24,14 +24,14 @@ const Login = () => {
     event.preventDefault();
     const user = { username, password };
     try {
-      const token = await accountApi.login(user);
-      console.log(`[Login] User auth for user ${user.username} successful, token is ${token}`);
-      await session.store(user.username, token);
+      const { token, username: canonicalUsername } = await accountApi.login(user);
+      console.log(`[Login] User auth for user ${user.username} successful, logged in as ${canonicalUsername}`);
+      await session.store(canonicalUsername, token);
       fadeReload(routes.app);
     } catch (e) {
       console.log(`[Login] User auth for user ${user.username} failed`, e);
       if (e instanceof UnauthorizedError) {
-        setError(t("Login failed: Invalid username or password"));
+        setError(t("Login failed: Invalid username/email or password"));
       } else {
         setError(e.message);
       }
@@ -53,7 +53,7 @@ const Login = () => {
           required
           fullWidth
           id="username"
-          label={t("signup_form_username")}
+          label={t("login_form_username_label")}
           name="username"
           value={username}
           onChange={(ev) => setUsername(ev.target.value.trim())}

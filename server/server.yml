@@ -370,6 +370,39 @@
 # visitor-topic-creation-limit-burst: 100
 # visitor-topic-creation-limit-replenish: "1m"
 
+# Abuse ban-feed: Count HTTP response statuses per visitor and append abusive IPs to a file that
+# fail2ban (or similar) can tail and ban on sight. This captures ntfy-layer rejections (e.g. ACL
+# 403s and ntfy's own 429s), so fail2ban does not have to regex-parse the full access log.
+# - ban-file is the file abusive IPs are appended to; leave empty to disable the feature. Its
+#   directory must exist and be writable by ntfy. Rotate it (e.g. logrotate, copytruncate) so it
+#   cannot grow unbounded.
+# - ban-window is the rolling window over which weighted strikes are counted, per visitor.
+# - ban-threshold is the number of weighted strikes per window before a visitor is banned. Each
+#   visitor has ONE strike budget; rejections draw it down, so there is no way to game it by mixing
+#   codes.
+# - ban-weights assigns a strike weight to a matcher KEY (KEY:WEIGHT). A KEY is an exact ntfy code
+#   ("42909"), a prefix family ("429*"), a bare HTTP status ("403", shorthand for "403*"), or "*".
+#   Longest match wins. A weight of 0 exempts a code (never contributes to a ban), so the legit quota
+#   429s can be carved out from a "*" catch-all. Heavier weights ban faster (auth-failure floods).
+#
+# Each appended line has the exact format
+#   "<RFC3339-UTC-timestamp> <ip> <prefix> <http-code> <ntfy-code>", for example:
+#   2026-07-17T20:56:32Z 1.2.3.4 1.2.3.4/32 429 42901
+#   2026-07-17T20:56:32Z 2001:db8::abcd 2001:db8::/64 429 42909
+# <prefix> is <ip> masked to the rate-limiting prefix (visitor-prefix-bits-ipv4/ipv6); that is the
+# unit a fail2ban jail should ban, so a whole IPv6 subnet is banned as one.
+#
+# ban-file: "/var/log/ntfy-ban.log"
+# ban-window: "1m"
+# ban-threshold: 100
+# ban-weights:
+#   - "42909:10"   # auth-failure flood: bans in ~10
+#   - "42908:0"    # daily message quota reached -> legit, never counts
+#   - "42903:0"    # subscription limit -> legit
+#   - "42905:0"    # daily bandwidth reached -> legit
+#   - "42910:0"    # daily phone call quota reached -> legit
+#   - "*:1"        # everything else 4xx/5xx
+
 # Rate limiting: IPv4/IPv6 address prefix bits used for rate limiting
 # - visitor-prefix-bits-ipv4: number of bits of the IPv4 address to use for rate limiting (default: 32, full address)
 # - visitor-prefix-bits-ipv6: number of bits of the IPv6 address to use for rate limiting (default: 64, /64 subnet)
@@ -423,8 +456,9 @@
 # doing, and/or secure access to the endpoint in your reverse proxy.
 #
 # - enable-metrics enables the /metrics endpoint for the default ntfy server (i.e. HTTP, HTTPS and/or Unix socket)
-# - metrics-listen-http exposes the metrics endpoint via a dedicated [IP]:port. If set, this option implicitly
-#   enables metrics as well, e.g. "10.0.1.1:9090" or ":9090"
+# - metrics-listen-http moves the metrics endpoint to a dedicated [IP]:port, e.g. "10.0.1.1:9090" or ":9090".
+#   It implicitly enables metrics. If set, the metrics are served only on that dedicated port, and the default
+#   ntfy server does not serve /metrics, even if enable-metrics is also set.
 #
 # enable-metrics: false
 # metrics-listen-http:

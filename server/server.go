@@ -32,13 +32,16 @@ import (
 	"golang.org/x/sync/errgroup"
 	"heckel.io/ntfy/v2/action"
 	"heckel.io/ntfy/v2/attachment"
+	"heckel.io/ntfy/v2/ban"
 	"heckel.io/ntfy/v2/db"
 	"heckel.io/ntfy/v2/db/pg"
 	"heckel.io/ntfy/v2/log"
 	"heckel.io/ntfy/v2/mail"
 	"heckel.io/ntfy/v2/message"
+	"heckel.io/ntfy/v2/metrics"
 	"heckel.io/ntfy/v2/model"
 	"heckel.io/ntfy/v2/payments"
+	"heckel.io/ntfy/v2/twilio"
 	"heckel.io/ntfy/v2/user"
 	"heckel.io/ntfy/v2/util"
 	"heckel.io/ntfy/v2/webpush"
@@ -58,8 +61,9 @@ type Server struct {
 	mailer            mail.Sender
 	topics            map[string]*topic
 	visitors          map[string]*visitor // ip:<ip> or user:<user>
+	ban               *ban.Service        // Abuse ban-feed; nil when the feature is disabled (no ban file)
 	firebaseClient    *firebaseClient
-	twilio            *twilioClient
+	twilio            *twilio.Client
 	messages          int64                               // Total number of messages (persisted if messageCache enabled)
 	messagesHistory   []int64                             // Last n values of the messages counter, used to determine rate
 	userManager       *user.Manager                       // Might be nil!
@@ -113,6 +117,7 @@ var (
 	apiUsersPath                                         = "/v1/users"
 	apiUsersAccessPath                                   = "/v1/users/access"
 	apiAccountPath                                       = "/v1/account"
+	apiAccountLoginPath                                  = "/v1/account/login"
 	apiAccountTokenPath                                  = "/v1/account/token"
 	apiAccountPasswordPath                               = "/v1/account/password"
 	apiAccountSettingsPath                               = "/v1/account/settings"
@@ -148,17 +153,6 @@ var (
 	//go:embed docs
 	docsStaticFs     embed.FS
 	docsStaticCached = &util.CachingEmbedFS{ModTime: time.Now(), FS: docsStaticFs}
-
-	//go:embed templates
-	templatesFs  embed.FS // Contains template config files (e.g. grafana.yml, github.yml, ...)
-	templatesDir = "templates"
-
-	templateNameRegex = regexp.MustCompile(`^[-_A-Za-z0-9]+$`)
-
-	// templateMaxExecutionTime is the wall-clock deadline for a single template render, a DoS guard
-	// (GHSA-rhwf-xgc9-m9fp). It is a var (not a const) solely so tests can raise it; it is never
-	// mutated in production.
-	templateMaxExecutionTime = 100 * time.Millisecond
 )
 
 const (
@@ -172,8 +166,6 @@ const (
 	unifiedPushTopicPrefix   = "up"                      // Temporarily, we rate limit all "up*" topics based on the subscriber
 	unifiedPushTopicLength   = 14                        // Length of UnifiedPush topics, including the "up" part
 	messagesHistoryMax       = 10                        // Number of message count values to keep in memory
-	templateMaxOutputBytes   = 1024 * 1024               // Maximum number of bytes a template can output, used to prevent DoS attacks
-	templateFileExtension    = ".yml"                    // Template files must end with this extension
 )
 
 // WebSocket constants
@@ -254,6 +246,16 @@ func New(conf *Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	twilioClient := twilio.NewClient(&twilio.Config{
+		Account:       conf.TwilioAccount,
+		AuthToken:     conf.TwilioAuthToken,
+		PhoneNumber:   conf.TwilioPhoneNumber,
+		CallsBaseURL:  conf.TwilioCallsBaseURL,
+		VerifyBaseURL: conf.TwilioVerifyBaseURL,
+		VerifyService: conf.TwilioVerifyService,
+		CallFormat:    conf.TwilioCallFormat,
+		BuildVersion:  conf.BuildVersion,
+	})
 	var userManager *user.Manager
 	if conf.AuthFile != "" || pool != nil {
 		authConfig := &user.Config{
@@ -293,6 +295,17 @@ func New(conf *Config) (*Server, error) {
 		}
 		firebaseClient = newFirebaseClient(sender, auther)
 	}
+	var banner *ban.Service
+	if conf.BanFile != "" {
+		banner = ban.NewService(&ban.Config{
+			File:           conf.BanFile,
+			Window:         conf.BanWindow,
+			Threshold:      conf.BanThreshold,
+			Weights:        conf.BanWeights,
+			PrefixBitsIPv4: conf.VisitorPrefixBitsIPv4,
+			PrefixBitsIPv6: conf.VisitorPrefixBitsIPv6,
+		})
+	}
 	s := &Server{
 		config:          conf,
 		db:              pool,
@@ -300,8 +313,9 @@ func New(conf *Config) (*Server, error) {
 		webPush:         wp,
 		attachment:      attachmentStore,
 		firebaseClient:  firebaseClient,
-		twilio:          newTwilioClient(conf, userManager),
+		twilio:          twilioClient,
 		mailer:          sender,
+		ban:             banner,
 		topics:          topics,
 		userManager:     userManager,
 		messages:        messages,
@@ -404,13 +418,11 @@ func (s *Server) Run() error {
 		}()
 	}
 	if s.config.MetricsListenHTTP != "" {
-		initMetrics()
 		s.httpMetricsServer = &http.Server{Addr: s.config.MetricsListenHTTP, Handler: promhttp.Handler()}
 		go func() {
 			errChan <- s.httpMetricsServer.ListenAndServe()
 		}()
 	} else if s.config.EnableMetrics {
-		initMetrics()
 		s.metricsHandler = promhttp.Handler()
 	}
 	if s.config.ProfileListenHTTP != "" {
@@ -459,6 +471,9 @@ func (s *Server) Stop() {
 		s.attachment.Close()
 	}
 	s.closeDatabases()
+	if s.ban != nil {
+		s.ban.Close()
+	}
 	if s.closeChan != nil {
 		close(s.closeChan)
 	}
@@ -481,7 +496,7 @@ func (s *Server) closeDatabases() {
 
 // handle is the main entry point for all HTTP requests
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
-	v, err := s.maybeAuthenticate(r) // Note: Always returns v, even when error is returned
+	r, v, err := s.maybeAuthenticate(r) // Note: Always returns v (and r, with the client IP in its context), even on error
 	if err != nil {
 		s.handleError(w, r, v, err)
 		return
@@ -498,9 +513,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				s.handleError(w, r, v, err)
 				return
 			}
-			if metricHTTPRequests != nil {
-				metricHTTPRequests.WithLabelValues("200", "20000", r.Method).Inc()
-			}
+			metrics.HTTPRequests.WithLabelValues("200", "20000", r.Method).Inc()
 		}).
 		Debug("HTTP request finished")
 }
@@ -510,9 +523,7 @@ func (s *Server) handleError(w http.ResponseWriter, r *http.Request, v *visitor,
 	if !ok {
 		httpErr = errHTTPInternalError
 	}
-	if metricHTTPRequests != nil {
-		metricHTTPRequests.WithLabelValues(fmt.Sprintf("%d", httpErr.HTTPCode), fmt.Sprintf("%d", httpErr.Code), r.Method).Inc()
-	}
+	metrics.HTTPRequests.WithLabelValues(strconv.Itoa(httpErr.HTTPCode), strconv.Itoa(httpErr.Code), r.Method).Inc()
 	isRateLimiting := util.Contains(rateLimitingErrorCodes, httpErr.HTTPCode)
 	isNormalError := strings.Contains(err.Error(), "i/o timeout") || util.Contains(normalErrorCodes, httpErr.HTTPCode)
 	ev := logvr(v, r).Err(err)
@@ -547,6 +558,11 @@ func (s *Server) handleError(w http.ResponseWriter, r *http.Request, v *visitor,
 	w.Header().Set("Access-Control-Allow-Origin", s.config.AccessControlAllowOrigin) // CORS, allow cross-origin requests
 	w.WriteHeader(httpErr.HTTPCode)
 	io.WriteString(w, httpErr.JSON()+"\n")
+	if s.ban != nil {
+		if ip, err := fromContext[netip.Addr](r, contextVisitorIP); err == nil {
+			s.ban.Record(ip, httpErr.HTTPCode, httpErr.Code)
+		}
+	}
 }
 
 func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request, v *visitor) error {
@@ -584,6 +600,8 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request, v *visit
 		return s.ensureUser(s.withAccountSync(s.handleAccountDelete))(w, r, v)
 	} else if r.Method == http.MethodPost && r.URL.Path == apiAccountPasswordPath {
 		return s.ensureUser(s.handleAccountPasswordChange)(w, r, v)
+	} else if r.Method == http.MethodPost && r.URL.Path == apiAccountLoginPath {
+		return s.ensureUser(s.withAccountSync(s.handleAccountLogin))(w, r, v)
 	} else if r.Method == http.MethodPost && r.URL.Path == apiAccountTokenPath {
 		return s.ensureUser(s.withAccountSync(s.handleAccountTokenCreate))(w, r, v)
 	} else if r.Method == http.MethodPatch && r.URL.Path == apiAccountTokenPath {
@@ -867,6 +885,41 @@ func (s *Server) handleMatrixDiscovery(w http.ResponseWriter) error {
 	return writeMatrixDiscoveryResponse(w)
 }
 
+// dispatch delivers m to local subscribers and fires the requested side-effect targets. It is
+// the single choke point through which every published message must pass; t may be nil when
+// the topic has no local subscribers (delayed sender).
+func (s *Server) dispatch(v *visitor, t *topic, m *model.Message, opts dispatchOpts) error {
+	// Deliver to local subscribers
+	if t != nil {
+		if opts.async {
+			go func() {
+				if err := t.Publish(v, m); err != nil {
+					logvm(v, m).Err(err).Warn("Unable to publish message")
+				}
+			}()
+		} else if err := t.Publish(v, m); err != nil {
+			return err
+		}
+	}
+	// Fire the requested side-effect targets
+	if s.firebaseClient != nil && opts.firebase {
+		go s.sendToFirebase(v, m)
+	}
+	if s.mailer != nil && opts.email != "" {
+		go s.sendEmail(v, m, opts.email)
+	}
+	if s.config.TwilioAccount != "" && opts.call != "" {
+		go s.callPhone(v, m, opts.call)
+	}
+	if s.config.UpstreamBaseURL != "" && opts.upstream {
+		go s.forwardPollRequest(v, m)
+	}
+	if s.config.WebPushPublicKey != "" && opts.webPush {
+		go s.publishToWebPushEndpoints(v, m)
+	}
+	return nil
+}
+
 func (s *Server) handlePublishInternal(r *http.Request, v *visitor) (*model.Message, error) {
 	start := time.Now()
 	t, err := fromContext[*topic](r, contextTopic)
@@ -906,7 +959,7 @@ func (s *Server) handlePublishInternal(r *http.Request, v *visitor) (*model.Mess
 	}
 	if call != "" {
 		var httpErr *errHTTP
-		call, httpErr = s.twilio.convertPhoneNumber(v.User(), call)
+		call, httpErr = s.convertPhoneNumber(v.User(), call)
 		if httpErr != nil {
 			return nil, httpErr.With(t)
 		} else if !vrate.CallAllowed() {
@@ -949,23 +1002,15 @@ func (s *Server) handlePublishInternal(r *http.Request, v *visitor) (*model.Mess
 		ev.Debug("Received message")
 	}
 	if !delayed {
-		if err := t.Publish(v, m); err != nil {
+		err := s.dispatch(v, t, m, dispatchOpts{
+			firebase: firebase,
+			email:    email,
+			call:     call,
+			upstream: !unifiedpush, // UP messages are not sent to upstream
+			webPush:  true,
+		})
+		if err != nil {
 			return nil, err
-		}
-		if s.firebaseClient != nil && firebase {
-			go s.sendToFirebase(v, m)
-		}
-		if s.mailer != nil && email != "" {
-			go s.sendEmail(v, m, email)
-		}
-		if s.config.TwilioAccount != "" && call != "" {
-			go s.twilio.callPhone(v, r, m, call)
-		}
-		if s.config.UpstreamBaseURL != "" && !unifiedpush { // UP messages are not sent to upstream
-			go s.forwardPollRequest(v, m)
-		}
-		if s.config.WebPushPublicKey != "" {
-			go s.publishToWebPushEndpoints(v, m)
 		}
 	} else {
 		logvrm(v, r, m).Tag(tagPublish).Debug("Message delayed, will process later")
@@ -995,27 +1040,27 @@ func (s *Server) handlePublishInternal(r *http.Request, v *visitor) (*model.Mess
 	s.messages++
 	s.mu.Unlock()
 	if unifiedpush {
-		minc(metricUnifiedPushPublishedSuccess)
+		metrics.UnifiedPushPublishedSuccess.Inc()
 	}
-	mset(metricMessagePublishDurationMillis, time.Since(start).Milliseconds())
+	metrics.MessagePublishDurationMillis.Set(float64(time.Since(start).Milliseconds()))
 	return m, nil
 }
 
 func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request, v *visitor) error {
 	m, err := s.handlePublishInternal(r, v)
 	if err != nil {
-		minc(metricMessagesPublishedFailure)
+		metrics.MessagesPublishedFailure.Inc()
 		return err
 	}
-	minc(metricMessagesPublishedSuccess)
+	metrics.MessagesPublishedSuccess.Inc()
 	return s.writeJSON(w, m.ForJSON())
 }
 
 func (s *Server) handlePublishMatrix(w http.ResponseWriter, r *http.Request, v *visitor) error {
 	_, err := s.handlePublishInternal(r, v)
 	if err != nil {
-		minc(metricMessagesPublishedFailure)
-		minc(metricMatrixPublishedFailure)
+		metrics.MessagesPublishedFailure.Inc()
+		metrics.MatrixPublishedFailure.Inc()
 		if e, ok := err.(*errHTTP); ok && e.HTTPCode == errHTTPInsufficientStorageUnifiedPush.HTTPCode {
 			topic, err := fromContext[*topic](r, contextTopic)
 			if err != nil {
@@ -1031,8 +1076,8 @@ func (s *Server) handlePublishMatrix(w http.ResponseWriter, r *http.Request, v *
 		}
 		return err
 	}
-	minc(metricMessagesPublishedSuccess)
-	minc(metricMatrixPublishedSuccess)
+	metrics.MessagesPublishedSuccess.Inc()
+	metrics.MatrixPublishedSuccess.Inc()
 	return writeMatrixSuccess(w)
 }
 
@@ -1065,17 +1110,9 @@ func (s *Server) handleActionMessage(w http.ResponseWriter, r *http.Request, v *
 	m.Sender = v.IP()
 	m.User = v.MaybeUserID()
 	m.Expires = time.Unix(m.Time, 0).Add(v.Limits().MessageExpiryDuration).Unix()
-	// Publish to subscribers
-	if err := t.Publish(v, m); err != nil {
+	// Publish to subscribers, Firebase (for Android clients), and web push endpoints
+	if err := s.dispatch(v, t, m, dispatchOpts{firebase: true, webPush: true}); err != nil {
 		return err
-	}
-	// Send to Firebase for Android clients
-	if s.firebaseClient != nil {
-		go s.sendToFirebase(v, m)
-	}
-	// Send to web push endpoints
-	if s.config.WebPushPublicKey != "" {
-		go s.publishToWebPushEndpoints(v, m)
 	}
 	if event == model.MessageDeleteEvent {
 		// Delete any existing scheduled message with the same sequence ID
@@ -1104,7 +1141,7 @@ func (s *Server) handleActionMessage(w http.ResponseWriter, r *http.Request, v *
 func (s *Server) sendToFirebase(v *visitor, m *model.Message) {
 	logvm(v, m).Tag(tagFirebase).Debug("Publishing to Firebase")
 	if err := s.firebaseClient.Send(v, m); err != nil {
-		minc(metricFirebasePublishedFailure)
+		metrics.FirebasePublishedFailure.Inc()
 		if errors.Is(err, errFirebaseTemporarilyBanned) {
 			logvm(v, m).Tag(tagFirebase).Err(err).Debug("Unable to publish to Firebase: %v", err.Error())
 		} else {
@@ -1112,17 +1149,17 @@ func (s *Server) sendToFirebase(v *visitor, m *model.Message) {
 		}
 		return
 	}
-	minc(metricFirebasePublishedSuccess)
+	metrics.FirebasePublishedSuccess.Inc()
 }
 
 func (s *Server) sendEmail(v *visitor, m *model.Message, email string) {
 	logvm(v, m).Tag(tagEmail).Field("email", email).Info("Sending email to %s", email)
 	if err := s.mailer.SendNotification(email, m, v.ip.String()); err != nil {
 		logvm(v, m).Tag(tagEmail).Field("email", email).Err(err).Warn("Unable to send email to %s: %v", email, err.Error())
-		minc(metricEmailsPublishedFailure)
+		metrics.EmailsPublishedFailure.Inc()
 		return
 	}
-	minc(metricEmailsPublishedSuccess)
+	metrics.EmailsPublishedSuccess.Inc()
 }
 
 func (s *Server) forwardPollRequest(v *visitor, m *model.Message) {
@@ -2030,24 +2067,18 @@ func (s *Server) sendDelayedMessages() error {
 func (s *Server) sendDelayedMessage(v *visitor, m *model.Message) error {
 	logvm(v, m).Debug("Sending delayed message")
 	s.mu.RLock()
-	t, ok := s.topics[m.Topic] // If no subscribers, just mark message as published
+	t := s.topics[m.Topic] // May be nil if there are no local subscribers; dispatch handles that
 	s.mu.RUnlock()
-	if ok {
-		go func() {
-			// We do not rate-limit messages here, since we've rate limited them in the PUT/POST handler
-			if err := t.Publish(v, m); err != nil {
-				logvm(v, m).Err(err).Warn("Unable to publish message")
-			}
-		}()
-	}
-	if s.firebaseClient != nil { // Firebase subscribers may not show up in topics map
-		go s.sendToFirebase(v, m)
-	}
-	if s.config.UpstreamBaseURL != "" {
-		go s.forwardPollRequest(v, m)
-	}
-	if s.config.WebPushPublicKey != "" {
-		go s.publishToWebPushEndpoints(v, m)
+	// We do not rate-limit messages here, since we've rate limited them in the PUT/POST handler.
+	// Firebase subscribers may not show up in the topics map, so side effects fire regardless.
+	err := s.dispatch(v, t, m, dispatchOpts{
+		firebase: true,
+		upstream: true,
+		webPush:  true,
+		async:    true,
+	})
+	if err != nil {
+		return err
 	}
 	if err := s.messageCache.MarkPublished(m); err != nil {
 		return err

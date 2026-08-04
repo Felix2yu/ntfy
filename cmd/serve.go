@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"text/template"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"github.com/urfave/cli/v2/altsrc"
+	"heckel.io/ntfy/v2/ban"
 	"heckel.io/ntfy/v2/log"
 	"heckel.io/ntfy/v2/payments"
 	"heckel.io/ntfy/v2/server"
@@ -98,6 +100,10 @@ var flagsServe = append(
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "visitor-topic-creation-limit-replenish", Aliases: []string{"visitor_topic_creation_limit_replenish"}, EnvVars: []string{"NTFY_VISITOR_TOPIC_CREATION_LIMIT_REPLENISH"}, Value: util.FormatDuration(server.DefaultVisitorTopicCreationLimitReplenish), Usage: "interval at which topic-creation tokens are refilled (one per x)"}),
 	altsrc.NewIntFlag(&cli.IntFlag{Name: "visitor-prefix-bits-ipv4", Aliases: []string{"visitor_prefix_bits_ipv4"}, EnvVars: []string{"NTFY_VISITOR_PREFIX_BITS_IPV4"}, Value: server.DefaultVisitorPrefixBitsIPv4, Usage: "number of bits of the IPv4 address to use for rate limiting (default: 32, full address)"}),
 	altsrc.NewIntFlag(&cli.IntFlag{Name: "visitor-prefix-bits-ipv6", Aliases: []string{"visitor_prefix_bits_ipv6"}, EnvVars: []string{"NTFY_VISITOR_PREFIX_BITS_IPV6"}, Value: server.DefaultVisitorPrefixBitsIPv6, Usage: "number of bits of the IPv6 address to use for rate limiting (default: 64, /64 subnet)"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "ban-file", Aliases: []string{"ban_file"}, EnvVars: []string{"NTFY_BAN_FILE"}, Value: "", Usage: "if set, append IPs of abusive visitors to this file for fail2ban to tail (empty disables)"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "ban-window", Aliases: []string{"ban_window"}, EnvVars: []string{"NTFY_BAN_WINDOW"}, Value: util.FormatDuration(server.DefaultBanWindow), Usage: "rolling window over which weighted strikes are counted for the ban file"}),
+	altsrc.NewIntFlag(&cli.IntFlag{Name: "ban-threshold", Aliases: []string{"ban_threshold"}, EnvVars: []string{"NTFY_BAN_THRESHOLD"}, Value: server.DefaultBanThreshold, Usage: "weighted strikes per window before an offender is banned"}),
+	altsrc.NewStringSliceFlag(&cli.StringSliceFlag{Name: "ban-weights", Aliases: []string{"ban_weights"}, EnvVars: []string{"NTFY_BAN_WEIGHTS"}, Value: cli.NewStringSlice(server.DefaultBanWeights...), Usage: "per-code strike weights as KEY:WEIGHT, where KEY is an ntfy code, an HTTP status, a PREFIX*, or '*' (weight 0 exempts)"}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{Name: "behind-proxy", Aliases: []string{"behind_proxy", "P"}, EnvVars: []string{"NTFY_BEHIND_PROXY"}, Value: false, Usage: "if set, use forwarded header (e.g. X-Forwarded-For, X-Client-IP) to determine visitor IP address (for rate limiting)"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "proxy-forwarded-header", Aliases: []string{"proxy_forwarded_header"}, EnvVars: []string{"NTFY_PROXY_FORWARDED_HEADER"}, Value: "X-Forwarded-For", Usage: "use specified header to determine visitor IP address (for rate limiting)"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "proxy-trusted-hosts", Aliases: []string{"proxy_trusted_hosts"}, EnvVars: []string{"NTFY_PROXY_TRUSTED_HOSTS"}, Value: "", Usage: "comma-separated list of trusted IP addresses, hosts, or CIDRs to remove from forwarded header"}),
@@ -215,6 +221,10 @@ func execServe(c *cli.Context) error {
 	visitorTopicCreationLimitReplenishStr := c.String("visitor-topic-creation-limit-replenish")
 	visitorPrefixBitsIPv4 := c.Int("visitor-prefix-bits-ipv4")
 	visitorPrefixBitsIPv6 := c.Int("visitor-prefix-bits-ipv6")
+	banFile := c.String("ban-file")
+	banWindowStr := c.String("ban-window")
+	banThreshold := c.Int("ban-threshold")
+	banWeightsRaw := c.StringSlice("ban-weights")
 	behindProxy := c.Bool("behind-proxy")
 	proxyForwardedHeader := c.String("proxy-forwarded-header")
 	proxyTrustedHosts := util.SplitNoEmpty(c.String("proxy-trusted-hosts"), ",")
@@ -269,6 +279,16 @@ func execServe(c *cli.Context) error {
 	webPushExpiryWarningDuration, err := util.ParseDuration(webPushExpiryWarningDurationStr)
 	if err != nil {
 		return fmt.Errorf("invalid web push expiry warning duration: %s", webPushExpiryWarningDurationStr)
+	}
+	banWindow, err := util.ParseDuration(banWindowStr)
+	if err != nil {
+		return fmt.Errorf("invalid ban window: %s", banWindowStr)
+	}
+
+	// Parse abuse ban-feed weights ("KEY:WEIGHT" list, "*" fallback)
+	banWeights, err := ban.ParseWeights(banWeightsRaw)
+	if err != nil {
+		return err
 	}
 
 	// Convert sizes to bytes
@@ -372,6 +392,14 @@ func execServe(c *cli.Context) error {
 		return errors.New("visitor-prefix-bits-ipv4 must be between 1 and 32")
 	} else if visitorPrefixBitsIPv6 < 1 || visitorPrefixBitsIPv6 > 128 {
 		return errors.New("visitor-prefix-bits-ipv6 must be between 1 and 128")
+	} else if banFile != "" && banWindow <= 0 {
+		return errors.New("if ban-file is set, ban-window must be greater than zero")
+	} else if banFile != "" && banThreshold <= 0 {
+		return errors.New("if ban-file is set, ban-threshold must be greater than zero")
+	} else if banFile != "" && len(banWeights) == 0 {
+		return errors.New("if ban-file is set, ban-weights must not be empty")
+	} else if banFile != "" && !util.FileExists(filepath.Dir(banFile)) {
+		return fmt.Errorf("if ban-file is set, its directory (%s) must exist", filepath.Dir(banFile))
 	} else if runtime.GOOS == "windows" && listenUnix != "" {
 		return errors.New("listen-unix is not supported on Windows")
 	}
@@ -512,6 +540,10 @@ func execServe(c *cli.Context) error {
 	conf.VisitorTopicCreationLimitReplenish = visitorTopicCreationLimitReplenish
 	conf.VisitorPrefixBitsIPv4 = visitorPrefixBitsIPv4
 	conf.VisitorPrefixBitsIPv6 = visitorPrefixBitsIPv6
+	conf.BanFile = banFile
+	conf.BanWindow = banWindow
+	conf.BanThreshold = banThreshold
+	conf.BanWeights = banWeights
 	conf.BehindProxy = behindProxy
 	conf.ProxyForwardedHeader = proxyForwardedHeader
 	conf.ProxyTrustedPrefixes = trustedProxyPrefixes

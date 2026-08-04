@@ -6,6 +6,7 @@ import {
   accountEmailVerifyUrl,
   accountEmailPrimaryUrl,
   accountEmailResendUrl,
+  accountLoginUrl,
   accountPasswordResetRequestUrl,
   accountPasswordResetUrl,
   accountPasswordUrl,
@@ -47,8 +48,8 @@ class AccountApi {
   }
 
   async login(user) {
-    const url = accountTokenUrl(config.base_url);
-    console.log(`[AccountApi] Checking auth for ${url}`);
+    const url = accountLoginUrl(config.base_url);
+    console.log(`[AccountApi] Logging in at ${url}`);
     const response = await fetchOrThrow(url, {
       method: "POST",
       headers: withBasicAuth({}, user.username, user.password),
@@ -57,7 +58,10 @@ class AccountApi {
     if (!json.token) {
       throw new Error(`Unexpected server response: Cannot find token`);
     }
-    return json.token;
+    // The identifier the user typed may be a primary email; login returns the canonical username
+    // so callers can store it and show the real username rather than whatever was typed. Fall back
+    // to the typed identifier if an older server omits the username, so the session still stores one.
+    return { token: json.token, username: json.username || user.username };
   }
 
   async logout() {

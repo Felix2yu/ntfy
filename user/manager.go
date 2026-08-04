@@ -33,6 +33,7 @@ const (
 	tokenLength                     = 32
 	tokenMaxCount                   = 60 // Only keep this many tokens in the table per user
 	tag                             = "user_manager"
+	schemaStore                     = "user" // Store name in the schema_version table (see db/schema)
 )
 
 // Default constants that may be overridden by configs
@@ -153,24 +154,26 @@ func (a *Manager) asyncExpiredMagicLinkReapLoop(interval time.Duration) {
 	}
 }
 
-// Authenticate checks username and password and returns a User if correct, and the user has not been
-// marked as deleted. The method returns in constant-ish time, regardless of whether the user exists or
-// the password is correct or incorrect.
-func (a *Manager) Authenticate(username, password string) (*User, error) {
-	if username == Everyone {
+// Authenticate checks a login identifier (a username or a verified primary email) and password, and
+// returns a User if correct and not marked as deleted. The identifier is resolved in a single query
+// via userByNameOrEmail, so a user can log in with either their username or their primary
+// email. The method returns in constant-ish time (one query, one bcrypt compare), regardless of
+// whether the identifier exists or the password is correct or incorrect.
+func (a *Manager) Authenticate(identifier, password string) (*User, error) {
+	if identifier == Everyone {
 		return nil, ErrUnauthenticated
 	}
-	user, err := a.User(username)
+	user, err := a.userByNameOrEmail(identifier)
 	if err != nil {
-		log.Tag(tag).Field("user_name", username).Err(err).Trace("Authentication of user failed (1)")
+		log.Tag(tag).Field("user_name", identifier).Err(err).Trace("Authentication of user failed (1)")
 		bcrypt.CompareHashAndPassword([]byte(userAuthIntentionalSlowDownHash), []byte("intentional slow-down to avoid timing attacks"))
 		return nil, ErrUnauthenticated
 	} else if user.Deleted {
-		log.Tag(tag).Field("user_name", username).Trace("Authentication of user failed (2): user marked deleted")
+		log.Tag(tag).Field("user_name", identifier).Trace("Authentication of user failed (2): user marked deleted")
 		bcrypt.CompareHashAndPassword([]byte(userAuthIntentionalSlowDownHash), []byte("intentional slow-down to avoid timing attacks"))
 		return nil, ErrUnauthenticated
 	} else if err := bcrypt.CompareHashAndPassword([]byte(user.Hash), []byte(password)); err != nil {
-		log.Tag(tag).Field("user_name", username).Err(err).Trace("Authentication of user failed (3)")
+		log.Tag(tag).Field("user_name", identifier).Err(err).Trace("Authentication of user failed (3)")
 		return nil, ErrUnauthenticated
 	}
 	return user, nil
@@ -530,6 +533,21 @@ func (a *Manager) UserByEmailOrUsername(identifier string) (*User, error) {
 		}
 	}
 	return a.User(identifier)
+}
+
+// userByNameOrEmail resolves a login identifier to a single user in one query, matching it
+// against the username first and a verified primary email address second. This is the INVERSE
+// precedence of UserByEmailOrUsername (used by password reset): at login a freely-chosen username
+// must win over a look-alike primary email, so a user whose username happens to equal another
+// account's email is not locked out of their own account. Because Authenticate still gates the match
+// on a password check, returning the username owner here never grants access to the email owner's
+// account. Returns ErrUserNotFound if neither matches.
+func (a *Manager) userByNameOrEmail(identifier string) (*User, error) {
+	rows, err := a.db.Query(a.queries.selectUserByNameOrPrimaryEmail, identifier, identifier, identifier)
+	if err != nil {
+		return nil, err
+	}
+	return a.readUser(rows)
 }
 
 // userByToken returns the user with the given token if it exists and is not expired, or ErrUserNotFound otherwise

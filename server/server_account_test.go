@@ -55,6 +55,58 @@ func TestAccount_Signup_Success(t *testing.T) {
 	})
 }
 
+func TestAccount_Login_Success(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		conf := newTestConfigWithAuthFile(t, databaseURL)
+		s := newTestServer(t, conf)
+		defer s.closeDatabases()
+
+		require.Nil(t, s.userManager.AddUser("phil", "mypass", user.RoleUser, false))
+		u, err := s.userManager.User("phil")
+		require.Nil(t, err)
+		require.Nil(t, s.userManager.AddEmail(u.ID, "phil@example.com"))
+		require.Nil(t, s.userManager.SetPrimaryEmail(u.ID, "phil@example.com"))
+
+		// Login by username returns a token and the canonical username
+		rr := request(t, s, "POST", "/v1/account/login", "", map[string]string{
+			"Authorization": util.BasicAuth("phil", "mypass"),
+		})
+		require.Equal(t, 200, rr.Code)
+		resp, _ := util.UnmarshalJSON[apiAccountLoginResponse](io.NopCloser(rr.Body))
+		require.True(t, strings.HasPrefix(resp.Token, "tk_"))
+		require.Equal(t, "phil", resp.Username)
+
+		// The returned token actually authenticates
+		rr = request(t, s, "GET", "/v1/account", "", map[string]string{
+			"Authorization": util.BearerAuth(resp.Token),
+		})
+		require.Equal(t, 200, rr.Code)
+
+		// Login by primary email returns the canonical username, not the email that was typed
+		rr = request(t, s, "POST", "/v1/account/login", "", map[string]string{
+			"Authorization": util.BasicAuth("phil@example.com", "mypass"),
+		})
+		require.Equal(t, 200, rr.Code)
+		resp, _ = util.UnmarshalJSON[apiAccountLoginResponse](io.NopCloser(rr.Body))
+		require.True(t, strings.HasPrefix(resp.Token, "tk_"))
+		require.Equal(t, "phil", resp.Username)
+	})
+}
+
+func TestAccount_Login_InvalidCredentials(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		conf := newTestConfigWithAuthFile(t, databaseURL)
+		s := newTestServer(t, conf)
+		defer s.closeDatabases()
+		require.Nil(t, s.userManager.AddUser("phil", "mypass", user.RoleUser, false))
+
+		rr := request(t, s, "POST", "/v1/account/login", "", map[string]string{
+			"Authorization": util.BasicAuth("phil", "wrongpass"),
+		})
+		require.Equal(t, 401, rr.Code)
+	})
+}
+
 func TestAccount_Signup_UserExists(t *testing.T) {
 	forEachBackend(t, func(t *testing.T, databaseURL string) {
 		conf := newTestConfigWithAuthFile(t, databaseURL)

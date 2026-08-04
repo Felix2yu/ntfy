@@ -21,31 +21,35 @@ import (
 //
 // This function will ALWAYS return a visitor, even if an error occurs (e.g. unauthorized), so
 // that subsequent logging calls still have a visitor context.
-func (s *Server) maybeAuthenticate(r *http.Request) (*visitor, error) {
+func (s *Server) maybeAuthenticate(r *http.Request) (*http.Request, *visitor, error) {
 	// Read the "Authorization" header value and exit out early if it's not set
 	ip := extractIPAddress(r, s.config.BehindProxy, s.config.ProxyForwardedHeader, s.config.ProxyTrustedPrefixes)
+	// Stash the extracted client IP in the request context so downstream code (the abuse ban-feed in
+	// handleError) can reuse it without re-parsing headers, and so an account-keyed (tier'd) visitor --
+	// whose shared visitor object has a stale v.ip -- is still attributed to the actual request IP.
+	r = withContext(r, map[contextKey]any{contextVisitorIP: ip})
 	vip := s.visitor(ip, nil)
 	if s.userManager == nil {
-		return vip, nil
+		return r, vip, nil
 	}
 	header, err := readAuthHeader(r)
 	if err != nil {
-		return vip, err
+		return r, vip, err
 	} else if !supportedAuthHeader(header) {
-		return vip, nil
+		return r, vip, nil
 	}
 	// If we're trying to auth, check the rate limiter first
 	if !vip.AuthAllowed() {
-		return vip, errHTTPTooManyRequestsLimitAuthFailure // Always return visitor, even when error occurs!
+		return r, vip, errHTTPTooManyRequestsLimitAuthFailure // Always return visitor, even when error occurs!
 	}
 	u, err := s.authenticate(r, header)
 	if err != nil {
 		vip.AuthFailed()
 		logr(r).Err(err).Debug("Authentication failed")
-		return vip, errHTTPUnauthorized // Always return visitor, even when error occurs!
+		return r, vip, errHTTPUnauthorized // Always return visitor, even when error occurs!
 	}
 	// Authentication with user was successful
-	return s.visitor(ip, u), nil
+	return r, s.visitor(ip, u), nil
 }
 
 // authenticate a user based on basic auth username/password (Authorization: Basic ...), or token auth (Authorization: Bearer ...).

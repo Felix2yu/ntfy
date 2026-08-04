@@ -10,6 +10,7 @@ import (
 
 	"heckel.io/ntfy/v2/log"
 	"heckel.io/ntfy/v2/model"
+	"heckel.io/ntfy/v2/twilio"
 	"heckel.io/ntfy/v2/user"
 	"heckel.io/ntfy/v2/util"
 )
@@ -266,6 +267,24 @@ func (s *Server) handleAccountPasswordChange(w http.ResponseWriter, r *http.Requ
 		return err
 	}
 	return s.writeJSON(w, newSuccessResponse())
+}
+
+// handleAccountLogin authenticates a username-or-email + password (via the ensureUser wrapper's
+// Basic Auth), mints a session token, and returns it together with the canonical username. Unlike
+// the token endpoint (which exists to mint arbitrary API tokens), this endpoint's job is to log a
+// user in, so it also reports who they are (the identifier they typed may be a primary email).
+func (s *Server) handleAccountLogin(w http.ResponseWriter, r *http.Request, v *visitor) error {
+	u := v.User()
+	logvr(v, r).Tag(tagAccount).Info("Logging in user %s", u.Name)
+	token, err := s.userManager.CreateToken(u.ID, "", time.Now().Add(tokenExpiryDuration), v.IP(), false)
+	if err != nil {
+		return err
+	}
+	response := &apiAccountLoginResponse{
+		Token:    token.Value,
+		Username: u.Name,
+	}
+	return s.writeJSON(w, response)
 }
 
 func (s *Server) handleAccountTokenCreate(w http.ResponseWriter, r *http.Request, v *visitor) error {
@@ -613,7 +632,7 @@ func (s *Server) handleAccountPhoneNumberVerify(w http.ResponseWriter, r *http.R
 	}
 	// Actually add the unverified number, and send verification
 	logvr(v, r).Tag(tagAccount).Field("phone_number", req.Number).Debug("Sending phone number verification")
-	if err := s.twilio.verifyPhoneNumber(v, r, req.Number, req.Channel); err != nil {
+	if err := s.twilio.Verify(req.Number, req.Channel); err != nil {
 		return err
 	}
 	return s.writeJSON(w, newSuccessResponse())
@@ -628,7 +647,10 @@ func (s *Server) handleAccountPhoneNumberAdd(w http.ResponseWriter, r *http.Requ
 	if !phoneNumberRegex.MatchString(req.Number) {
 		return errHTTPBadRequestPhoneNumberInvalid
 	}
-	if err := s.twilio.verifyPhoneNumberCheck(v, r, req.Number, req.Code); err != nil {
+	if err := s.twilio.CheckVerify(req.Number, req.Code); err != nil {
+		if errors.Is(err, twilio.ErrVerificationExpired) {
+			return errHTTPGonePhoneVerificationExpired
+		}
 		return err
 	}
 	logvr(v, r).Tag(tagAccount).Field("phone_number", req.Number).Debug("Adding phone number as verified")
@@ -963,7 +985,7 @@ func (s *Server) publishSyncEventForUser(v *visitor, u *user.User) error {
 		return err
 	}
 	m := model.NewDefaultMessage(syncTopic.ID, string(messageBytes))
-	if err := syncTopic.Publish(v, m); err != nil {
+	if err := s.dispatch(v, syncTopic, m, dispatchOpts{}); err != nil {
 		return err
 	}
 	return nil

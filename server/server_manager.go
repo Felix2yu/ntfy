@@ -2,6 +2,7 @@ package server
 
 import (
 	"heckel.io/ntfy/v2/log"
+	"heckel.io/ntfy/v2/metrics"
 	"heckel.io/ntfy/v2/util"
 )
 
@@ -93,13 +94,13 @@ func (s *Server) execManager() {
 			"emails_sent_failure":     sentMailFailure,
 		}).
 		Info("Server stats")
-	mset(metricMessagesCached, messagesCached)
-	mset(metricVisitors, visitorsCount)
-	mset(metricUsers, usersCount)
-	mset(metricSubscribers, subscribers)
-	mset(metricTopics, topicsCount)
+	metrics.MessagesCached.Set(float64(messagesCached))
+	metrics.Visitors.Set(float64(visitorsCount))
+	metrics.Users.Set(float64(usersCount))
+	metrics.Subscribers.Set(float64(subscribers))
+	metrics.Topics.Set(float64(topicsCount))
 	if s.attachment != nil {
-		mset(metricAttachmentsTotalSize, s.attachment.Size())
+		metrics.AttachmentsTotalSize.Set(float64(s.attachment.Size()))
 	}
 }
 

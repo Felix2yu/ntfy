@@ -19,6 +19,7 @@ import (
 
 	"github.com/emersion/go-smtp"
 	"github.com/microcosm-cc/bluemonday"
+	"heckel.io/ntfy/v2/metrics"
 	"heckel.io/ntfy/v2/model"
 )
 
@@ -180,7 +181,7 @@ func (s *smtpSession) Data(r io.Reader) error {
 		s.backend.mu.Lock()
 		s.backend.success++
 		s.backend.mu.Unlock()
-		minc(metricEmailsReceivedSuccess)
+		metrics.EmailsReceivedSuccess.Inc()
 		return nil
 	})
 }
@@ -238,7 +239,7 @@ func (s *smtpSession) withFailCount(fn func() error) error {
 		// We do not want to spam the log with WARN messages.
 		logem(s.conn).Err(err).Debug("Incoming mail error")
 		s.backend.failure++
-		minc(metricEmailsReceivedFailure)
+		metrics.EmailsReceivedFailure.Inc()
 	}
 	return err
 }

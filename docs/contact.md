@@ -28,7 +28,7 @@ via the following channels:
 | Channel               | Contact                                             | Description                              |
 |-----------------------|-----------------------------------------------------|------------------------------------------|
 | **General Support**   | [support@mail.ntfy.sh](mailto:support@mail.ntfy.sh) | Direct email support for Pro subscribers |
-| **Billing Inquiries** | [billing@mail.ntfy.sh](mailto:support@mail.ntfy.sh) | Inquire about billing issues             |
+| **Billing Inquiries** | [billing@mail.ntfy.sh](mailto:billing@mail.ntfy.sh) | Inquire about billing issues             |
 | **Discord/Matrix**    | Mention your Pro status                             | Priority responses in community channels |
 
 Please include your ntfy.sh username when contacting support so we can verify your subscription status.
@@ -36,6 +36,11 @@ Please include your ntfy.sh username when contacting support so we can verify yo
 ## Security issues
 
 If you discover a security vulnerability, please report it responsibly via [security@mail.ntfy.sh](mailto:security@mail.ntfy.sh). See also: [SECURITY.md](https://github.com/binwiederhier/ntfy/blob/main/SECURITY.md).
+
+## Abuse reports
+
+To report spam, phishing, or other abuse of ntfy.sh, please email [abuse@mail.ntfy.sh](mailto:abuse@mail.ntfy.sh).
+Please include the topic name and any relevant message details so we can investigate.
 
 ## Other inquiries
 

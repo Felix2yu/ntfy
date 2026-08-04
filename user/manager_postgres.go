@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"heckel.io/ntfy/v2/db"
+	"heckel.io/ntfy/v2/db/schema"
 )
 
 // PostgreSQL queries
@@ -32,6 +33,15 @@ const (
 		FROM "user" u
 		LEFT JOIN tier t on t.id = u.tier_id
 		WHERE user_name = $1
+	`
+	postgresSelectUserByNameOrPrimaryEmailQuery = `
+		SELECT u.id, u.user_name, u.pass, u.role, u.prefs, u.sync_topic, u.provisioned, u.stats_messages, u.stats_emails, u.stats_calls, u.stripe_customer_id, u.stripe_subscription_id, u.stripe_subscription_status, u.stripe_subscription_interval, u.stripe_subscription_paid_until, u.stripe_subscription_cancel_at, u.deleted, t.id, t.code, t.name, t.messages_limit, t.messages_expiry_duration, t.emails_limit, t.calls_limit, t.reservations_limit, t.attachment_file_size_limit, t.attachment_total_size_limit, t.attachment_expiry_duration, t.attachment_bandwidth_limit, t.stripe_monthly_price_id, t.stripe_yearly_price_id
+		FROM "user" u
+		LEFT JOIN tier t on t.id = u.tier_id
+		WHERE u.user_name = $1
+		   OR u.id = (SELECT user_id FROM user_email WHERE email = $2 AND is_primary)
+		ORDER BY CASE WHEN u.user_name = $3 THEN 0 ELSE 1 END
+		LIMIT 1
 	`
 	postgresSelectUserByTokenQuery = `
 		SELECT u.id, u.user_name, u.pass, u.role, u.prefs, u.sync_topic, u.provisioned, u.stats_messages, u.stats_emails, u.stats_calls, u.stripe_customer_id, u.stripe_subscription_id, u.stripe_subscription_status, u.stripe_subscription_interval, u.stripe_subscription_paid_until, u.stripe_subscription_cancel_at, u.deleted, t.id, t.code, t.name, t.messages_limit, t.messages_expiry_duration, t.emails_limit, t.calls_limit, t.reservations_limit, t.attachment_file_size_limit, t.attachment_total_size_limit, t.attachment_expiry_duration, t.attachment_bandwidth_limit, t.stripe_monthly_price_id, t.stripe_yearly_price_id
@@ -260,85 +270,86 @@ func postgresSelectAccessCacheUsersQuery(n int) string {
 
 // NewPostgresManager creates a new Manager backed by a PostgreSQL database using an existing connection pool.
 var postgresQueries = queries{
-	selectUserByID:               postgresSelectUserByIDQuery,
-	selectUserByName:             postgresSelectUserByNameQuery,
-	selectUserByToken:            postgresSelectUserByTokenQuery,
-	selectUserByStripeCustomerID: postgresSelectUserByStripeCustomerIDQuery,
-	selectUsernames:              postgresSelectUsernamesQuery,
-	selectUsers:                  postgresSelectUsersQuery,
-	selectUserCount:              postgresSelectUserCountQuery,
-	selectUserIDFromUsername:     postgresSelectUserIDFromUsernameQuery,
-	insertUser:                   postgresInsertUserQuery,
-	updateUserPass:               postgresUpdateUserPassQuery,
-	updateUserRole:               postgresUpdateUserRoleQuery,
-	updateUserProvisioned:        postgresUpdateUserProvisionedQuery,
-	updateUserPrefs:              postgresUpdateUserPrefsQuery,
-	updateUserStats:              postgresUpdateUserStatsQuery,
-	updateUserStatsResetAll:      postgresUpdateUserStatsResetAllQuery,
-	updateUserTier:               postgresUpdateUserTierQuery,
-	updateUserDeleted:            postgresUpdateUserDeletedQuery,
-	deleteUser:                   postgresDeleteUserQuery,
-	deleteUserTier:               postgresDeleteUserTierQuery,
-	deleteUsersMarked:            postgresDeleteUsersMarkedQuery,
-	deleteUsersProvisioned:       postgresDeleteUsersProvisionedQuery,
-	selectTopicPerms:             postgresSelectTopicPermsQuery,
-	selectAccessCacheAll:         postgresSelectAccessCacheAllQuery,
-	selectAccessCacheUsers:       postgresSelectAccessCacheUsersQuery,
-	selectUserAllAccess:          postgresSelectUserAllAccessQuery,
-	selectUserAccess:             postgresSelectUserAccessQuery,
-	selectUserReservations:       postgresSelectUserReservationsQuery,
-	selectUserReservationsCount:  postgresSelectUserReservationsCountQuery,
-	selectUserReservationsOwner:  postgresSelectUserReservationsOwnerQuery,
-	selectUserHasReservation:     postgresSelectUserHasReservationQuery,
-	selectOtherAccessCount:       postgresSelectOtherAccessCountQuery,
-	upsertUserAccess:             postgresUpsertUserAccessQuery,
-	deleteUserAccess:             postgresDeleteUserAccessQuery,
-	deleteUserAccessProvisioned:  postgresDeleteUserAccessProvisionedQuery,
-	deleteTopicAccess:            postgresDeleteTopicAccessQuery,
-	deleteAllAccess:              postgresDeleteAllAccessQuery,
-	selectToken:                  postgresSelectTokenQuery,
-	selectTokens:                 postgresSelectTokensQuery,
-	selectTokenCount:             postgresSelectTokenCountQuery,
-	selectAllProvisionedTokens:   postgresSelectAllProvisionedTokensQuery,
-	upsertToken:                  postgresUpsertTokenQuery,
-	updateToken:                  postgresUpdateTokenQuery,
-	updateTokenLastAccess:        postgresUpdateTokenLastAccessQuery,
-	deleteToken:                  postgresDeleteTokenQuery,
-	deleteProvisionedToken:       postgresDeleteProvisionedTokenQuery,
-	deleteAllProvisionedTokens:   postgresDeleteAllProvisionedTokensQuery,
-	deleteAllToken:               postgresDeleteAllTokenQuery,
-	deleteExpiredTokens:          postgresDeleteExpiredTokensQuery,
-	deleteExcessTokens:           postgresDeleteExcessTokensQuery,
-	insertTier:                   postgresInsertTierQuery,
-	selectTiers:                  postgresSelectTiersQuery,
-	selectTierByCode:             postgresSelectTierByCodeQuery,
-	selectTierByPriceID:          postgresSelectTierByPriceIDQuery,
-	updateTier:                   postgresUpdateTierQuery,
-	deleteTier:                   postgresDeleteTierQuery,
-	selectPhoneNumbers:           postgresSelectPhoneNumbersQuery,
-	insertPhoneNumber:            postgresInsertPhoneNumberQuery,
-	deletePhoneNumber:            postgresDeletePhoneNumberQuery,
-	selectEmails:                 postgresSelectEmailsQuery,
-	insertEmail:                  postgresInsertEmailQuery,
-	insertEmailIgnore:            postgresInsertEmailIgnoreQuery,
-	deleteEmail:                  postgresDeleteEmailQuery,
-	selectPrimaryEmail:           postgresSelectPrimaryEmailQuery,
-	selectUserIDByPrimary:        postgresSelectUserIDByPrimaryQuery,
-	updateEmailSetPrimary:        postgresUpdateEmailSetPrimaryQuery,
-	updateEmailClearPrimary:      postgresUpdateEmailClearPrimaryQuery,
-	insertMagicLink:              postgresInsertMagicLinkQuery,
-	selectMagicLinkByHash:        postgresSelectMagicLinkByHashQuery,
-	deleteMagicLinkByHash:        postgresDeleteMagicLinkByHashQuery,
-	deleteMagicLinkEmailVerify:   postgresDeleteVerifyScopeQuery,
-	deleteMagicLinkResetPassword: postgresDeleteResetScopeQuery,
-	selectPendingEmails:          postgresSelectPendingEmailsQuery,
-	deleteExpiredMagicLinks:      postgresDeleteExpiredMagicLinksQuery,
-	updateBilling:                postgresUpdateBillingQuery,
+	selectUserByID:                 postgresSelectUserByIDQuery,
+	selectUserByName:               postgresSelectUserByNameQuery,
+	selectUserByNameOrPrimaryEmail: postgresSelectUserByNameOrPrimaryEmailQuery,
+	selectUserByToken:              postgresSelectUserByTokenQuery,
+	selectUserByStripeCustomerID:   postgresSelectUserByStripeCustomerIDQuery,
+	selectUsernames:                postgresSelectUsernamesQuery,
+	selectUsers:                    postgresSelectUsersQuery,
+	selectUserCount:                postgresSelectUserCountQuery,
+	selectUserIDFromUsername:       postgresSelectUserIDFromUsernameQuery,
+	insertUser:                     postgresInsertUserQuery,
+	updateUserPass:                 postgresUpdateUserPassQuery,
+	updateUserRole:                 postgresUpdateUserRoleQuery,
+	updateUserProvisioned:          postgresUpdateUserProvisionedQuery,
+	updateUserPrefs:                postgresUpdateUserPrefsQuery,
+	updateUserStats:                postgresUpdateUserStatsQuery,
+	updateUserStatsResetAll:        postgresUpdateUserStatsResetAllQuery,
+	updateUserTier:                 postgresUpdateUserTierQuery,
+	updateUserDeleted:              postgresUpdateUserDeletedQuery,
+	deleteUser:                     postgresDeleteUserQuery,
+	deleteUserTier:                 postgresDeleteUserTierQuery,
+	deleteUsersMarked:              postgresDeleteUsersMarkedQuery,
+	deleteUsersProvisioned:         postgresDeleteUsersProvisionedQuery,
+	selectTopicPerms:               postgresSelectTopicPermsQuery,
+	selectAccessCacheAll:           postgresSelectAccessCacheAllQuery,
+	selectAccessCacheUsers:         postgresSelectAccessCacheUsersQuery,
+	selectUserAllAccess:            postgresSelectUserAllAccessQuery,
+	selectUserAccess:               postgresSelectUserAccessQuery,
+	selectUserReservations:         postgresSelectUserReservationsQuery,
+	selectUserReservationsCount:    postgresSelectUserReservationsCountQuery,
+	selectUserReservationsOwner:    postgresSelectUserReservationsOwnerQuery,
+	selectUserHasReservation:       postgresSelectUserHasReservationQuery,
+	selectOtherAccessCount:         postgresSelectOtherAccessCountQuery,
+	upsertUserAccess:               postgresUpsertUserAccessQuery,
+	deleteUserAccess:               postgresDeleteUserAccessQuery,
+	deleteUserAccessProvisioned:    postgresDeleteUserAccessProvisionedQuery,
+	deleteTopicAccess:              postgresDeleteTopicAccessQuery,
+	deleteAllAccess:                postgresDeleteAllAccessQuery,
+	selectToken:                    postgresSelectTokenQuery,
+	selectTokens:                   postgresSelectTokensQuery,
+	selectTokenCount:               postgresSelectTokenCountQuery,
+	selectAllProvisionedTokens:     postgresSelectAllProvisionedTokensQuery,
+	upsertToken:                    postgresUpsertTokenQuery,
+	updateToken:                    postgresUpdateTokenQuery,
+	updateTokenLastAccess:          postgresUpdateTokenLastAccessQuery,
+	deleteToken:                    postgresDeleteTokenQuery,
+	deleteProvisionedToken:         postgresDeleteProvisionedTokenQuery,
+	deleteAllProvisionedTokens:     postgresDeleteAllProvisionedTokensQuery,
+	deleteAllToken:                 postgresDeleteAllTokenQuery,
+	deleteExpiredTokens:            postgresDeleteExpiredTokensQuery,
+	deleteExcessTokens:             postgresDeleteExcessTokensQuery,
+	insertTier:                     postgresInsertTierQuery,
+	selectTiers:                    postgresSelectTiersQuery,
+	selectTierByCode:               postgresSelectTierByCodeQuery,
+	selectTierByPriceID:            postgresSelectTierByPriceIDQuery,
+	updateTier:                     postgresUpdateTierQuery,
+	deleteTier:                     postgresDeleteTierQuery,
+	selectPhoneNumbers:             postgresSelectPhoneNumbersQuery,
+	insertPhoneNumber:              postgresInsertPhoneNumberQuery,
+	deletePhoneNumber:              postgresDeletePhoneNumberQuery,
+	selectEmails:                   postgresSelectEmailsQuery,
+	insertEmail:                    postgresInsertEmailQuery,
+	insertEmailIgnore:              postgresInsertEmailIgnoreQuery,
+	deleteEmail:                    postgresDeleteEmailQuery,
+	selectPrimaryEmail:             postgresSelectPrimaryEmailQuery,
+	selectUserIDByPrimary:          postgresSelectUserIDByPrimaryQuery,
+	updateEmailSetPrimary:          postgresUpdateEmailSetPrimaryQuery,
+	updateEmailClearPrimary:        postgresUpdateEmailClearPrimaryQuery,
+	insertMagicLink:                postgresInsertMagicLinkQuery,
+	selectMagicLinkByHash:          postgresSelectMagicLinkByHashQuery,
+	deleteMagicLinkByHash:          postgresDeleteMagicLinkByHashQuery,
+	deleteMagicLinkEmailVerify:     postgresDeleteVerifyScopeQuery,
+	deleteMagicLinkResetPassword:   postgresDeleteResetScopeQuery,
+	selectPendingEmails:            postgresSelectPendingEmailsQuery,
+	deleteExpiredMagicLinks:        postgresDeleteExpiredMagicLinksQuery,
+	updateBilling:                  postgresUpdateBillingQuery,
 }
 
 // NewPostgresManager creates a new Manager backed by a PostgreSQL database
 func NewPostgresManager(d *db.DB, config *Config) (*Manager, error) {
-	if err := setupPostgres(d.Primary()); err != nil {
+	if err := schema.Migrate(d.Primary(), schema.Postgres, schemaStore, postgresCurrentSchemaVersion, postgresCreateTables, postgresMigrations); err != nil {
 		return nil, err
 	}
 	return newManager(d, postgresQueries, config)

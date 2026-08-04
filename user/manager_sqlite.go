@@ -9,6 +9,7 @@ import (
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 
 	"heckel.io/ntfy/v2/db"
+	"heckel.io/ntfy/v2/db/schema"
 	"heckel.io/ntfy/v2/util"
 )
 
@@ -36,6 +37,15 @@ const (
 		FROM user u
 		LEFT JOIN tier t on t.id = u.tier_id
 		WHERE user = ?
+	`
+	sqliteSelectUserByNameOrPrimaryEmailQuery = `
+		SELECT u.id, u.user, u.pass, u.role, u.prefs, u.sync_topic, u.provisioned, u.stats_messages, u.stats_emails, u.stats_calls, u.stripe_customer_id, u.stripe_subscription_id, u.stripe_subscription_status, u.stripe_subscription_interval, u.stripe_subscription_paid_until, u.stripe_subscription_cancel_at, deleted, t.id, t.code, t.name, t.messages_limit, t.messages_expiry_duration, t.emails_limit, t.calls_limit, t.reservations_limit, t.attachment_file_size_limit, t.attachment_total_size_limit, t.attachment_expiry_duration, t.attachment_bandwidth_limit, t.stripe_monthly_price_id, t.stripe_yearly_price_id
+		FROM user u
+		LEFT JOIN tier t on t.id = u.tier_id
+		WHERE u.user = ?
+		   OR u.id = (SELECT user_id FROM user_email WHERE email = ? AND is_primary = 1)
+		ORDER BY CASE WHEN u.user = ? THEN 0 ELSE 1 END
+		LIMIT 1
 	`
 	sqliteSelectUserByTokenQuery = `
 		SELECT u.id, u.user, u.pass, u.role, u.prefs, u.sync_topic, u.provisioned, u.stats_messages, u.stats_emails, u.stats_calls, u.stripe_customer_id, u.stripe_subscription_id, u.stripe_subscription_status, u.stripe_subscription_interval, u.stripe_subscription_paid_until, u.stripe_subscription_cancel_at, deleted, t.id, t.code, t.name, t.messages_limit, t.messages_expiry_duration, t.emails_limit, t.calls_limit, t.reservations_limit, t.attachment_file_size_limit, t.attachment_total_size_limit, t.attachment_expiry_duration, t.attachment_bandwidth_limit, t.stripe_monthly_price_id, t.stripe_yearly_price_id
@@ -256,80 +266,81 @@ func sqliteSelectAccessCacheUsersQuery(n int) string {
 }
 
 var sqliteQueries = queries{
-	selectUserByID:               sqliteSelectUserByIDQuery,
-	selectUserByName:             sqliteSelectUserByNameQuery,
-	selectUserByToken:            sqliteSelectUserByTokenQuery,
-	selectUserByStripeCustomerID: sqliteSelectUserByStripeCustomerIDQuery,
-	selectUsernames:              sqliteSelectUsernamesQuery,
-	selectUsers:                  sqliteSelectUsersQuery,
-	selectUserCount:              sqliteSelectUserCountQuery,
-	selectUserIDFromUsername:     sqliteSelectUserIDFromUsernameQuery,
-	insertUser:                   sqliteInsertUserQuery,
-	updateUserPass:               sqliteUpdateUserPassQuery,
-	updateUserRole:               sqliteUpdateUserRoleQuery,
-	updateUserProvisioned:        sqliteUpdateUserProvisionedQuery,
-	updateUserPrefs:              sqliteUpdateUserPrefsQuery,
-	updateUserStats:              sqliteUpdateUserStatsQuery,
-	updateUserStatsResetAll:      sqliteUpdateUserStatsResetAllQuery,
-	updateUserTier:               sqliteUpdateUserTierQuery,
-	updateUserDeleted:            sqliteUpdateUserDeletedQuery,
-	deleteUser:                   sqliteDeleteUserQuery,
-	deleteUserTier:               sqliteDeleteUserTierQuery,
-	deleteUsersMarked:            sqliteDeleteUsersMarkedQuery,
-	deleteUsersProvisioned:       sqliteDeleteUsersProvisionedQuery,
-	selectTopicPerms:             sqliteSelectTopicPermsQuery,
-	selectAccessCacheAll:         sqliteSelectAccessCacheAllQuery,
-	selectAccessCacheUsers:       sqliteSelectAccessCacheUsersQuery,
-	selectUserAllAccess:          sqliteSelectUserAllAccessQuery,
-	selectUserAccess:             sqliteSelectUserAccessQuery,
-	selectUserReservations:       sqliteSelectUserReservationsQuery,
-	selectUserReservationsCount:  sqliteSelectUserReservationsCountQuery,
-	selectUserReservationsOwner:  sqliteSelectUserReservationsOwnerQuery,
-	selectUserHasReservation:     sqliteSelectUserHasReservationQuery,
-	selectOtherAccessCount:       sqliteSelectOtherAccessCountQuery,
-	upsertUserAccess:             sqliteUpsertUserAccessQuery,
-	deleteUserAccess:             sqliteDeleteUserAccessQuery,
-	deleteUserAccessProvisioned:  sqliteDeleteUserAccessProvisionedQuery,
-	deleteTopicAccess:            sqliteDeleteTopicAccessQuery,
-	deleteAllAccess:              sqliteDeleteAllAccessQuery,
-	selectToken:                  sqliteSelectTokenQuery,
-	selectTokens:                 sqliteSelectTokensQuery,
-	selectTokenCount:             sqliteSelectTokenCountQuery,
-	selectAllProvisionedTokens:   sqliteSelectAllProvisionedTokensQuery,
-	upsertToken:                  sqliteUpsertTokenQuery,
-	updateToken:                  sqliteUpdateTokenQuery,
-	updateTokenLastAccess:        sqliteUpdateTokenLastAccessQuery,
-	deleteToken:                  sqliteDeleteTokenQuery,
-	deleteProvisionedToken:       sqliteDeleteProvisionedTokenQuery,
-	deleteAllProvisionedTokens:   sqliteDeleteAllProvisionedTokensQuery,
-	deleteAllToken:               sqliteDeleteAllTokenQuery,
-	deleteExpiredTokens:          sqliteDeleteExpiredTokensQuery,
-	deleteExcessTokens:           sqliteDeleteExcessTokensQuery,
-	insertTier:                   sqliteInsertTierQuery,
-	selectTiers:                  sqliteSelectTiersQuery,
-	selectTierByCode:             sqliteSelectTierByCodeQuery,
-	selectTierByPriceID:          sqliteSelectTierByPriceIDQuery,
-	updateTier:                   sqliteUpdateTierQuery,
-	deleteTier:                   sqliteDeleteTierQuery,
-	selectPhoneNumbers:           sqliteSelectPhoneNumbersQuery,
-	insertPhoneNumber:            sqliteInsertPhoneNumberQuery,
-	deletePhoneNumber:            sqliteDeletePhoneNumberQuery,
-	selectEmails:                 sqliteSelectEmailsQuery,
-	insertEmail:                  sqliteInsertEmailQuery,
-	insertEmailIgnore:            sqliteInsertEmailIgnoreQuery,
-	deleteEmail:                  sqliteDeleteEmailQuery,
-	selectPrimaryEmail:           sqliteSelectPrimaryEmailQuery,
-	selectUserIDByPrimary:        sqliteSelectUserIDByPrimaryQuery,
-	updateEmailSetPrimary:        sqliteUpdateEmailSetPrimaryQuery,
-	updateEmailClearPrimary:      sqliteUpdateEmailClearPrimaryQuery,
-	insertMagicLink:              sqliteInsertMagicLinkQuery,
-	selectMagicLinkByHash:        sqliteSelectMagicLinkByHashQuery,
-	deleteMagicLinkByHash:        sqliteDeleteMagicLinkByHashQuery,
-	deleteMagicLinkEmailVerify:   sqliteDeleteVerifyScopeQuery,
-	deleteMagicLinkResetPassword: sqliteDeleteResetScopeQuery,
-	selectPendingEmails:          sqliteSelectPendingEmailsQuery,
-	deleteExpiredMagicLinks:      sqliteDeleteExpiredMagicLinksQuery,
-	updateBilling:                sqliteUpdateBillingQuery,
+	selectUserByID:                 sqliteSelectUserByIDQuery,
+	selectUserByName:               sqliteSelectUserByNameQuery,
+	selectUserByNameOrPrimaryEmail: sqliteSelectUserByNameOrPrimaryEmailQuery,
+	selectUserByToken:              sqliteSelectUserByTokenQuery,
+	selectUserByStripeCustomerID:   sqliteSelectUserByStripeCustomerIDQuery,
+	selectUsernames:                sqliteSelectUsernamesQuery,
+	selectUsers:                    sqliteSelectUsersQuery,
+	selectUserCount:                sqliteSelectUserCountQuery,
+	selectUserIDFromUsername:       sqliteSelectUserIDFromUsernameQuery,
+	insertUser:                     sqliteInsertUserQuery,
+	updateUserPass:                 sqliteUpdateUserPassQuery,
+	updateUserRole:                 sqliteUpdateUserRoleQuery,
+	updateUserProvisioned:          sqliteUpdateUserProvisionedQuery,
+	updateUserPrefs:                sqliteUpdateUserPrefsQuery,
+	updateUserStats:                sqliteUpdateUserStatsQuery,
+	updateUserStatsResetAll:        sqliteUpdateUserStatsResetAllQuery,
+	updateUserTier:                 sqliteUpdateUserTierQuery,
+	updateUserDeleted:              sqliteUpdateUserDeletedQuery,
+	deleteUser:                     sqliteDeleteUserQuery,
+	deleteUserTier:                 sqliteDeleteUserTierQuery,
+	deleteUsersMarked:              sqliteDeleteUsersMarkedQuery,
+	deleteUsersProvisioned:         sqliteDeleteUsersProvisionedQuery,
+	selectTopicPerms:               sqliteSelectTopicPermsQuery,
+	selectAccessCacheAll:           sqliteSelectAccessCacheAllQuery,
+	selectAccessCacheUsers:         sqliteSelectAccessCacheUsersQuery,
+	selectUserAllAccess:            sqliteSelectUserAllAccessQuery,
+	selectUserAccess:               sqliteSelectUserAccessQuery,
+	selectUserReservations:         sqliteSelectUserReservationsQuery,
+	selectUserReservationsCount:    sqliteSelectUserReservationsCountQuery,
+	selectUserReservationsOwner:    sqliteSelectUserReservationsOwnerQuery,
+	selectUserHasReservation:       sqliteSelectUserHasReservationQuery,
+	selectOtherAccessCount:         sqliteSelectOtherAccessCountQuery,
+	upsertUserAccess:               sqliteUpsertUserAccessQuery,
+	deleteUserAccess:               sqliteDeleteUserAccessQuery,
+	deleteUserAccessProvisioned:    sqliteDeleteUserAccessProvisionedQuery,
+	deleteTopicAccess:              sqliteDeleteTopicAccessQuery,
+	deleteAllAccess:                sqliteDeleteAllAccessQuery,
+	selectToken:                    sqliteSelectTokenQuery,
+	selectTokens:                   sqliteSelectTokensQuery,
+	selectTokenCount:               sqliteSelectTokenCountQuery,
+	selectAllProvisionedTokens:     sqliteSelectAllProvisionedTokensQuery,
+	upsertToken:                    sqliteUpsertTokenQuery,
+	updateToken:                    sqliteUpdateTokenQuery,
+	updateTokenLastAccess:          sqliteUpdateTokenLastAccessQuery,
+	deleteToken:                    sqliteDeleteTokenQuery,
+	deleteProvisionedToken:         sqliteDeleteProvisionedTokenQuery,
+	deleteAllProvisionedTokens:     sqliteDeleteAllProvisionedTokensQuery,
+	deleteAllToken:                 sqliteDeleteAllTokenQuery,
+	deleteExpiredTokens:            sqliteDeleteExpiredTokensQuery,
+	deleteExcessTokens:             sqliteDeleteExcessTokensQuery,
+	insertTier:                     sqliteInsertTierQuery,
+	selectTiers:                    sqliteSelectTiersQuery,
+	selectTierByCode:               sqliteSelectTierByCodeQuery,
+	selectTierByPriceID:            sqliteSelectTierByPriceIDQuery,
+	updateTier:                     sqliteUpdateTierQuery,
+	deleteTier:                     sqliteDeleteTierQuery,
+	selectPhoneNumbers:             sqliteSelectPhoneNumbersQuery,
+	insertPhoneNumber:              sqliteInsertPhoneNumberQuery,
+	deletePhoneNumber:              sqliteDeletePhoneNumberQuery,
+	selectEmails:                   sqliteSelectEmailsQuery,
+	insertEmail:                    sqliteInsertEmailQuery,
+	insertEmailIgnore:              sqliteInsertEmailIgnoreQuery,
+	deleteEmail:                    sqliteDeleteEmailQuery,
+	selectPrimaryEmail:             sqliteSelectPrimaryEmailQuery,
+	selectUserIDByPrimary:          sqliteSelectUserIDByPrimaryQuery,
+	updateEmailSetPrimary:          sqliteUpdateEmailSetPrimaryQuery,
+	updateEmailClearPrimary:        sqliteUpdateEmailClearPrimaryQuery,
+	insertMagicLink:                sqliteInsertMagicLinkQuery,
+	selectMagicLinkByHash:          sqliteSelectMagicLinkByHashQuery,
+	deleteMagicLinkByHash:          sqliteDeleteMagicLinkByHashQuery,
+	deleteMagicLinkEmailVerify:     sqliteDeleteVerifyScopeQuery,
+	deleteMagicLinkResetPassword:   sqliteDeleteResetScopeQuery,
+	selectPendingEmails:            sqliteSelectPendingEmailsQuery,
+	deleteExpiredMagicLinks:        sqliteDeleteExpiredMagicLinksQuery,
+	updateBilling:                  sqliteUpdateBillingQuery,
 }
 
 // NewSQLiteManager creates a new Manager backed by a SQLite database
@@ -341,14 +352,17 @@ func NewSQLiteManager(filename, startupQueries string, config *Config) (*Manager
 	// Open with case-sensitive LIKE. ACL topic matching is done via LIKE (see
 	// selectTopicPerms), and SQLite's LIKE is case-insensitive for ASCII by
 	// default -- without this, an ACL rule for "secret" would also match a
-	// request for "SECRET", which is a security iisue. PostgreSQL's LIKE is
+	// request for "SECRET", which is a security issue. PostgreSQL's LIKE is
 	// already case-sensitive, so this only affects SQLite. The pragma is
 	// applied to every pooled connection by the driver.
 	d, err := sql.Open("sqlite3", fmt.Sprintf("%s?_case_sensitive_like=on", filename))
 	if err != nil {
 		return nil, err
 	}
-	if err := setupSQLite(d); err != nil {
+	// Migrations must run before the startup queries: the 5 -> 6 table rebuilds rely on
+	// foreign keys being OFF, which is only guaranteed on fresh connections (the foreign_keys
+	// pragma is enabled as part of the builtin startup queries below)
+	if err := schema.Migrate(d, schema.SQLite, schemaStore, sqliteCurrentSchemaVersion, sqliteCreateTables, sqliteMigrations); err != nil {
 		return nil, err
 	}
 	if err := runSQLiteStartupQueries(d, startupQueries); err != nil {

@@ -47,10 +47,10 @@ func (u *User) IsUser() bool {
 
 // Auther is an interface for authentication and authorization
 type Auther interface {
-	// Authenticate checks username and password and returns a user if correct. The method
-	// returns in constant-ish time, regardless of whether the user exists or the password is
-	// correct or incorrect.
-	Authenticate(username, password string) (*User, error)
+	// Authenticate checks a login identifier (username or verified primary email) and password
+	// and returns a user if correct. The method returns in constant-ish time, regardless of
+	// whether the identifier exists or the password is correct or incorrect.
+	Authenticate(identifier, password string) (*User, error)
 
 	// Authorize returns nil if the given user has access to the given topic using the desired
 	// permission. The user param may be nil to signal an anonymous user.
@@ -338,27 +338,28 @@ var (
 // queries holds the database-specific SQL queries
 type queries struct {
 	// User queries
-	selectUserByID               string
-	selectUserByName             string
-	selectUserByToken            string
-	selectUserByStripeCustomerID string
-	selectUsernames              string
-	selectUsers                  string
-	selectUserCount              string
-	selectUserIDFromUsername     string
-	insertUser                   string
-	updateUserPass               string
-	updateUserRole               string
-	updateUserProvisioned        string
-	updateUserPrefs              string
-	updateUserStats              string
-	updateUserStatsResetAll      string
-	updateUserTier               string
-	updateUserDeleted            string
-	deleteUser                   string
-	deleteUserTier               string
-	deleteUsersMarked            string
-	deleteUsersProvisioned       string
+	selectUserByID                 string
+	selectUserByName               string
+	selectUserByNameOrPrimaryEmail string
+	selectUserByToken              string
+	selectUserByStripeCustomerID   string
+	selectUsernames                string
+	selectUsers                    string
+	selectUserCount                string
+	selectUserIDFromUsername       string
+	insertUser                     string
+	updateUserPass                 string
+	updateUserRole                 string
+	updateUserProvisioned          string
+	updateUserPrefs                string
+	updateUserStats                string
+	updateUserStatsResetAll        string
+	updateUserTier                 string
+	updateUserDeleted              string
+	deleteUser                     string
+	deleteUserTier                 string
+	deleteUsersMarked              string
+	deleteUsersProvisioned         string
 
 	// Access queries
 	selectTopicPerms            string             // Direct-DB authorizeTopicAccess query; used when the in-memory cache is disabled

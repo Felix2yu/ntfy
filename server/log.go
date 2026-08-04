@@ -16,22 +16,21 @@ import (
 
 // Log tags
 const (
-	tagStartup      = "startup"
-	tagHTTP         = "http"
-	tagPublish      = "publish"
-	tagSubscribe    = "subscribe"
-	tagFirebase     = "firebase"
-	tagSMTP         = "smtp"  // Receive email
-	tagEmail        = "email" // Send email
-	tagTwilio       = "twilio"
-	tagMessageCache = "message_cache"
-	tagStripe       = "stripe"
-	tagAccount      = "account"
-	tagManager      = "manager"
-	tagResetter     = "resetter"
-	tagWebsocket    = "websocket"
-	tagMatrix       = "matrix"
-	tagWebPush      = "webpush"
+	tagStartup   = "startup"
+	tagHTTP      = "http"
+	tagPublish   = "publish"
+	tagSubscribe = "subscribe"
+	tagFirebase  = "firebase"
+	tagSMTP      = "smtp"  // Receive email
+	tagEmail     = "email" // Send email
+	tagTwilio    = "twilio"
+	tagStripe    = "stripe"
+	tagAccount   = "account"
+	tagManager   = "manager"
+	tagResetter  = "resetter"
+	tagWebsocket = "websocket"
+	tagMatrix    = "matrix"
+	tagWebPush   = "webpush"
 )
 
 var (

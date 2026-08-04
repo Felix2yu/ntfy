@@ -224,6 +224,22 @@ func canLogin(t *testing.T, s *Server, username, password string) bool {
 	return rr.Code == 200
 }
 
+func TestAccount_LoginByPrimaryEmail(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		s, mailer, auth := newEmailTestServer(t, databaseURL)
+		defer s.closeDatabases()
+		verifyEmailFor(t, s, mailer, auth, "ben@example.com")
+
+		// Basic Auth works with either the username or the verified primary email
+		require.True(t, canLogin(t, s, "ben", "ben"))
+		require.True(t, canLogin(t, s, "ben@example.com", "ben"))
+
+		// ...but not with the wrong password or an unknown email
+		require.False(t, canLogin(t, s, "ben@example.com", "wrong"))
+		require.False(t, canLogin(t, s, "nobody@example.com", "ben"))
+	})
+}
+
 func TestAccount_PasswordReset_ByUsername(t *testing.T) {
 	forEachBackend(t, func(t *testing.T, databaseURL string) {
 		s, mailer, auth := newEmailTestServer(t, databaseURL)

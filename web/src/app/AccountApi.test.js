@@ -42,15 +42,19 @@ afterEach(() => {
 });
 
 describe("AccountApi.login", () => {
-  it("POSTs basic auth to the token URL and returns the token", async () => {
-    fetchMock.mockResolvedValue(ok({ token: "tk_returned" }));
-    const token = await accountApi.login({ username: "phil", password: "secret" });
+  it("POSTs basic auth to the login URL and returns the token and canonical username", async () => {
+    // The typed identifier is an email; the login endpoint returns the canonical username in one
+    // request, so login() surfaces it (callers store it) rather than echoing what was typed.
+    fetchMock.mockResolvedValue(ok({ token: "tk_returned", username: "phil" }));
+    const result = await accountApi.login({ username: "phil@example.com", password: "secret" });
 
-    expect(token).toBe("tk_returned");
+    expect(result).toEqual({ token: "tk_returned", username: "phil" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
     const [url, options] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://ntfy.sh/v1/account/token");
+    expect(url).toBe("https://ntfy.sh/v1/account/login");
     expect(options.method).toBe("POST");
-    expect(options.headers.Authorization).toBe(`Basic ${btoa("phil:secret")}`);
+    expect(options.headers.Authorization).toBe(`Basic ${btoa("phil@example.com:secret")}`);
   });
 
   it("throws when the server response has no token", async () => {
