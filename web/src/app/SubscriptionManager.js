@@ -199,12 +199,11 @@ export class SubscriptionManager {
     }
     const exists = await this.db.notifications.get(notification.id);
     if (exists) {
-      // Notification already in DB — upgrade to "new" if the Poller inserted it first
-      if (exists.new !== 1) {
-        await this.db.notifications.update(notification.id, { new: 1 });
-        await this.db.subscriptions.update(subscriptionId, { last: notification.id });
-        return true;
-      }
+      // Notification already in DB (e.g. the Poller inserted it first, or the server
+      // re-sent a cached message after reconnect/refresh). Never flip an already-read
+      // notification back to "new" — keep the user's read state and just refresh the
+      // last-seen marker. Only genuinely new notifications add to the unread bubble.
+      await this.db.subscriptions.update(subscriptionId, { last: notification.id });
       return false;
     }
     try {

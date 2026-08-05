@@ -14,8 +14,28 @@ const { SubscriptionManager } = await import("./SubscriptionManager");
 // that syncFromRemote() (and the upsert/remove/update helpers it calls) touches.
 const fakeDb = () => {
   const rows = new Map();
+  const notificationRows = new Map();
   return {
     rows,
+    notifications: {
+      get: async (id) => notificationRows.get(id),
+      add: async (notification) => {
+        notificationRows.set(notification.id, notification);
+      },
+      put: async (notification) => {
+        notificationRows.set(notification.id, notification);
+      },
+      where: (query) => ({
+        modify: async (changes) => {
+          // eslint-disable-next-line guard-for-in
+          for (const [id, notification] of notificationRows) {
+            if (query.id && notification.id !== query.id) continue;
+            if (query.subscriptionId && notification.subscriptionId !== query.subscriptionId) continue;
+            notificationRows.set(id, { ...notification, ...changes });
+          }
+        },
+      }),
+    },
     subscriptions: {
       get: async (id) => rows.get(id),
       put: async (sub) => {
@@ -107,5 +127,39 @@ describe("SubscriptionManager.syncFromRemote", () => {
     await manager.syncFromRemote([{ base_url: baseUrl, topic: "mytopic", display_name: "My Topic" }], []);
 
     expect(db.rows.get("https://ntfy.sh/mytopic").displayName).toBe("My Topic");
+  });
+});
+
+describe("SubscriptionManager.addNotification", () => {
+  const subscriptionId = `${baseUrl}/mytopic`;
+  const message = { id: "abc123", time: 123, event: "message" };
+
+  it("adds a genuinely new notification as unread", async () => {
+    const db = fakeDb();
+    const manager = new SubscriptionManager(db);
+    await manager.upsert(baseUrl, "mytopic");
+
+    const added = await manager.addNotification(subscriptionId, message);
+
+    expect(added).toBe(true);
+    expect(db.rows.get(subscriptionId).last).toBe("abc123");
+    const stored = await db.notifications.get("abc123");
+    expect(stored.new).toBe(1);
+  });
+
+  it("keeps an already-read notification read when the server re-sends it", async () => {
+    const db = fakeDb();
+    const manager = new SubscriptionManager(db);
+    await manager.upsert(baseUrl, "mytopic");
+
+    await manager.addNotification(subscriptionId, message);
+    await manager.markNotificationRead("abc123");
+    expect((await db.notifications.get("abc123")).new).toBe(0);
+
+    // Server re-sends the same cached message (e.g. after a refresh/reconnect).
+    const added = await manager.addNotification(subscriptionId, message);
+
+    expect(added).toBe(false); // Must not re-trigger a notification
+    expect((await db.notifications.get("abc123")).new).toBe(0); // Read state preserved
   });
 });
