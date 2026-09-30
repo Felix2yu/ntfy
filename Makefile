@@ -1,5 +1,5 @@
 MAKEFLAGS := --jobs=1
-NPM := npm
+NPM := pnpm
 PYTHON := python3
 PIP := pip3
 VERSION := $(shell git describe --tag)
@@ -42,7 +42,7 @@ help:
 	@echo
 	@echo "Build web app:"
 	@echo "  make web                        - Build the web app"
-	@echo "  make web-deps                   - Install web app dependencies (npm install the universe)"
+	@echo "  make web-deps                   - Install web app dependencies (pnpm install the universe)"
 	@echo "  make web-build                  - Actually build the web app"
 	@echo "  make web-lint                   - Run eslint on the web app"
 	@echo "  make web-test                   - Run vitest unit tests for the web app"
@@ -151,13 +151,12 @@ web-build:
 			../server/site/config.js
 
 web-deps:
-	cd web && $(NPM) ci
-	# Use "npm ci" so that we don't change the package lock file
+	cd web && $(NPM) install --frozen-lockfile
+	# Use "--frozen-lockfile" so that we don't change the lock file
 	# If this fails for .svg files, optimize them with svgo
 
 web-deps-update:
-	cd web && $(NPM) update --before="$(shell date -d '7 days ago' +%Y-%m-%d)"
-	cd web && $(NPM) install
+	cd web && $(NPM) update
 
 web-fmt:
 	cd web && $(NPM) run format

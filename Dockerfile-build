@@ -27,8 +27,9 @@ ADD ./docs ./docs
 RUN make docs-build
 
 # web
-ADD ./web/package.json ./web/package-lock.json ./web/
-RUN --mount=type=cache,target=/root/.npm make web-deps
+ADD ./web/package.json ./web/pnpm-lock.yaml ./web/
+RUN npm install -g pnpm@12
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store make web-deps
 ADD ./web ./web
 RUN make web-build
 
