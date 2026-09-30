@@ -79,6 +79,16 @@ class Api {
     });
   }
 
+  async clearMessage(baseUrl, topic, sequenceId) {
+    const user = await userManager.get(baseUrl);
+    const url = `${baseUrl}/${topic}/${sequenceId}/read`;
+    console.log(`[Api] Marking message ${sequenceId} as read: ${url}`);
+    await fetchOrThrow(url, {
+      method: "GET",
+      headers: maybeWithAuth({}, user),
+    });
+  }
+
   async clearTopic(baseUrl, topic, since) {
     const user = await userManager.get(baseUrl);
     const headers = maybeWithAuth({}, user);

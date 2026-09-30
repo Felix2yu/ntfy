@@ -217,10 +217,11 @@ const NotificationItem = (props) => {
   const tags = otherTags.length > 0 ? otherTags.join(", ") : null;
   const handleDelete = async () => {
     console.log(`[Notifications] Deleting notification ${notification.id}`);
+    const sequenceId = notification.sequenceId || notification.id;
     try {
       const subscription = await subscriptionManager.get(notification.subscriptionId);
       if (subscription) {
-        await api.delete(subscription.baseUrl, subscription.topic, notification.id);
+        await api.delete(subscription.baseUrl, subscription.topic, sequenceId);
       }
     } catch (e) {
       console.error(`[Notifications] Failed to delete from server, deleting locally`, e);
@@ -229,6 +230,16 @@ const NotificationItem = (props) => {
   };
   const handleMarkRead = async () => {
     console.log(`[Notifications] Marking notification ${notification.id} as read`);
+    // Sync the read state via the server (message_clear event) so other devices mark it
+    // read as well; fall back to local-only on failure (e.g. offline, no write permission).
+    try {
+      const subscription = await subscriptionManager.get(notification.subscriptionId);
+      if (subscription) {
+        await api.clearMessage(subscription.baseUrl, subscription.topic, notification.sequenceId || notification.id);
+      }
+    } catch (e) {
+      console.error(`[Notifications] Failed to sync read state to server, marking read locally`, e);
+    }
     await subscriptionManager.markNotificationRead(notification.id);
   };
   const handleCopy = (s) => {
