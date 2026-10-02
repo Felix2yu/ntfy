@@ -6,6 +6,35 @@ import { topicUrl } from "./utils";
 import { messageWithSequenceId } from "./notificationUtils";
 import { EVENT_MESSAGE, EVENT_MESSAGE_CLEAR, EVENT_MESSAGE_DELETE } from "./events";
 
+// Remembers the endpoint we last registered with the server, so we can remove it when the browser
+// (or Apple's push service) hands out a new one. Without this, a rotated endpoint leaves the server
+// with two subscriptions for one device, one of which is dead and can never be refreshed.
+const webPushEndpointStorageKey = "ntfy.webPushEndpoint";
+
+const readWebPushEndpoint = () => {
+  try {
+    return window.localStorage.getItem(webPushEndpointStorageKey);
+  } catch {
+    return null;
+  }
+};
+
+const writeWebPushEndpoint = (endpoint) => {
+  try {
+    window.localStorage.setItem(webPushEndpointStorageKey, endpoint);
+  } catch {
+    // Private browsing / storage disabled: endpoint rotation cleanup is best effort.
+  }
+};
+
+const clearWebPushEndpoint = () => {
+  try {
+    window.localStorage.removeItem(webPushEndpointStorageKey);
+  } catch {
+    // See above
+  }
+};
+
 export class SubscriptionManager {
   constructor(dbImpl) {
     this.db = dbImpl;
@@ -149,10 +178,24 @@ export class SubscriptionManager {
       return;
     }
 
+    const previousEndpoint = readWebPushEndpoint();
+
     if (hasWebPushTopics) {
       await api.updateWebPush(browserSubscription, topics);
+      // The endpoint is the primary key on the server, so the POST above is idempotent. If the
+      // browser rotated the endpoint, drop the old one: leaving it behind means the server keeps
+      // pushing to a dead endpoint until the push service eventually reports it as gone.
+      if (previousEndpoint && previousEndpoint !== browserSubscription.endpoint) {
+        try {
+          await api.deleteWebPush({ endpoint: previousEndpoint });
+        } catch (e) {
+          console.error("[SubscriptionManager] Failed to remove stale web push endpoint", e);
+        }
+      }
+      writeWebPushEndpoint(browserSubscription.endpoint);
     } else {
       await api.deleteWebPush(browserSubscription);
+      clearWebPushEndpoint();
     }
   }
 
@@ -294,6 +337,19 @@ export class SubscriptionManager {
       await this.db.notifications.bulkPut(unread.map((notification) => ({ ...notification, new: 0 })));
     }
     return sequenceIds;
+  }
+
+  /**
+   * Explicit "mark all as read" for a topic: marks every notification of the subscription as read
+   * locally and publishes the read state to the server so other devices converge. Returns the
+   * number of notifications that actually changed state (0 if nothing was unread).
+   *
+   * This is the only bulk read path; navigating to a topic never marks anything as read.
+   */
+  async markAllNotificationsRead(subscriptionId) {
+    const sequenceIds = await this.markNotificationsRead(subscriptionId);
+    await this.syncNotificationsRead(subscriptionId, sequenceIds);
+    return sequenceIds.length;
   }
 
   /**

@@ -30,6 +30,125 @@ import {
 
 const broadcastChannel = new BroadcastChannel("web-push-broadcast");
 
+// Control channel, separate from "web-push-broadcast" because every message on that channel makes
+// the web app play a notification sound (see hooks.js).
+const controlChannel = new BroadcastChannel("web-push-control");
+
+// duplicated from utils.js#urlB64ToUint8Array, since we can't import that here
+// as long as there's mp3 and other incompatible imports there
+const urlB64ToUint8Array = (base64String) => {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = self.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+};
+
+/** Topics that should receive Web Push, mirroring SubscriptionManager#webPushTopics(). */
+const webPushTopics = async () => {
+  const db = await dbAsync();
+  const subscriptions = await db.subscriptions.toArray();
+  return subscriptions
+    .filter((subscription) => !subscription.internal && subscription.mutedUntil === 0 && subscription.baseUrl === config.base_url)
+    .map((subscription) => subscription.topic);
+};
+
+const postWebPushSubscription = async (subscription, topics) => {
+  const keys = subscription.toJSON ? subscription.toJSON().keys : subscription.keys;
+  const token = await session.tokenAsync();
+  const headers = { "Content-Type": "application/json" };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  try {
+    const response = await fetch(`${config.base_url}/v1/webpush`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        endpoint: subscription.endpoint,
+        auth: keys.auth,
+        p256dh: keys.p256dh,
+        topics,
+      }),
+    });
+    if (!response.ok) {
+      console.error(`[ServiceWorker] Failed to register web push subscription: HTTP ${response.status}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("[ServiceWorker] Failed to register web push subscription", e);
+    return false;
+  }
+};
+
+const deleteWebPushSubscription = async (endpoint) => {
+  try {
+    await fetch(`${config.base_url}/v1/webpush`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint }),
+    });
+  } catch (e) {
+    console.error("[ServiceWorker] Failed to delete web push subscription", e);
+  }
+};
+
+/**
+ * Re-registers the Web Push subscription after the browser or the push service rotated or
+ * invalidated it.
+ *
+ * This is the missing half of the "iOS PWA stops receiving notifications" fix: the event fires
+ * even when the app has not been running for weeks, so it is the only chance to tell the server
+ * about the new endpoint. Without it the server keeps pushing to a dead endpoint, eventually
+ * deletes it (404/410) and nothing ever rebuilds it.
+ */
+const handlePushSubscriptionChange = async (event) => {
+  console.log("[ServiceWorker] PushSubscriptionChange", {
+    old: event.oldSubscription?.endpoint,
+    new: event.newSubscription?.endpoint,
+  });
+
+  if (import.meta.env.DEV) {
+    console.warn("[ServiceWorker] Skipping pushsubscriptionchange in development since no config exists");
+    return;
+  }
+
+  const oldSubscription = event.oldSubscription;
+  let subscription = event.newSubscription;
+
+  try {
+    if (!subscription) {
+      subscription = await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(config.web_push_public_key),
+      });
+    }
+  } catch (e) {
+    console.error("[ServiceWorker] Could not re-subscribe after pushsubscriptionchange", e);
+    return;
+  }
+
+  const topics = await webPushTopics();
+  if (topics.length === 0) {
+    console.log("[ServiceWorker] No web push topics, removing subscription instead of re-registering");
+    await deleteWebPushSubscription(subscription.endpoint);
+    return;
+  }
+
+  const registered = await postWebPushSubscription(subscription, topics);
+  if (registered && oldSubscription && oldSubscription.endpoint !== subscription.endpoint) {
+    // Drop the rotated-away endpoint, otherwise the server keeps a subscription that can never
+    // be refreshed and will only be cleaned up once the push service reports it as gone.
+    await deleteWebPushSubscription(oldSubscription.endpoint);
+  }
+
+  controlChannel.postMessage({ type: "subscription-change", endpoint: subscription.endpoint });
+};
+
 /**
  * Handle a received web push message and show notification.
  *
@@ -403,11 +522,10 @@ self.addEventListener("activate", () => {
   self.skipWaiting();
 });
 
-// There's no good way to test this, and Chrome doesn't seem to implement this,
-// so leaving it for now
+// Fires when the push service rotates or invalidates the subscription, even while the PWA has not
+// been running (e.g. iOS). Re-subscribing here is what keeps an installed PWA reachable.
 self.addEventListener("pushsubscriptionchange", (event) => {
-  console.log("[ServiceWorker] PushSubscriptionChange");
-  console.log(event);
+  event.waitUntil(handlePushSubscriptionChange(event));
 });
 
 self.addEventListener("push", (event) => {

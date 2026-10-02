@@ -41,6 +41,7 @@ var (
 const (
 	DefaultWebPushExpiryWarningDuration = 55 * 24 * time.Hour
 	DefaultWebPushExpiryDuration        = 60 * 24 * time.Hour
+	DefaultWebPushTTL                   = 28 * 24 * time.Hour // 4 weeks: max time WebKit/APNs will hold an undelivered message
 )
 
 // Defines default abuse ban-feed settings (see BanFile, BanWindow, BanThreshold, BanWeights)
@@ -226,6 +227,7 @@ type Config struct {
 	WebPushStartupQueries                string
 	WebPushExpiryDuration                time.Duration
 	WebPushExpiryWarningDuration         time.Duration
+	WebPushTTL                           time.Duration // Delivery TTL for web push messages; 0 falls back to cache-duration, then 4 weeks
 	BanFile                              string        // Abuse ban-feed: file that fail2ban tails; empty string disables the feature
 	BanWindow                            time.Duration // Abuse ban-feed: rolling window over which weighted strikes are counted
 	BanThreshold                         int           // Abuse ban-feed: weighted strikes per window before a prefix is banned
@@ -334,6 +336,7 @@ func NewConfig() *Config {
 		WebPushEmailAddress:                  "",
 		WebPushExpiryDuration:                DefaultWebPushExpiryDuration,
 		WebPushExpiryWarningDuration:         DefaultWebPushExpiryWarningDuration,
+		WebPushTTL:                           DefaultWebPushTTL,
 		BanFile:                              "",
 		BanWindow:                            DefaultBanWindow,
 		BanThreshold:                         DefaultBanThreshold,

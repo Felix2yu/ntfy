@@ -28,6 +28,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import Clear from "@mui/icons-material/Clear";
 import ClearAll from "@mui/icons-material/ClearAll";
+import DoneAll from "@mui/icons-material/DoneAll";
 import Edit from "@mui/icons-material/Edit";
 import EnhancedEncryption from "@mui/icons-material/EnhancedEncryption";
 import Lock from "@mui/icons-material/Lock";
@@ -64,6 +65,8 @@ export const SubscriptionPopup = (props) => {
   const [showPublishError, setShowPublishError] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [retireDialogOpen, setRetireDialogOpen] = useState(false);
+  const [markAllReadBusy, setMarkAllReadBusy] = useState(false);
+  const [markAllReadResult, setMarkAllReadResult] = useState(null);
   const { subscription } = props;
   const placement = props.placement ?? "left";
   const reservations = account?.reservations || [];
@@ -166,6 +169,24 @@ export const SubscriptionPopup = (props) => {
     setClearDialogOpen(true);
   };
 
+  // Explicit bulk read: entering a topic does not mark it read, so this is how a topic's unread
+  // badge is cleared. Disabled (and skipped) while the topic has no unread notifications.
+  const handleMarkAllRead = async () => {
+    if (markAllReadBusy || !subscription.new) {
+      return;
+    }
+    setMarkAllReadBusy(true);
+    try {
+      const count = await subscriptionManager.markAllNotificationsRead(subscription.id);
+      setMarkAllReadResult({ ok: true, count });
+    } catch (e) {
+      console.error(`[SubscriptionPopup] Error marking all notifications as read`, e);
+      setMarkAllReadResult({ ok: false });
+    } finally {
+      setMarkAllReadBusy(false);
+    }
+  };
+
   const handleSetMutedUntil = async (mutedUntil) => {
     await subscriptionManager.setMutedUntil(subscription.id, mutedUntil);
   };
@@ -239,6 +260,12 @@ export const SubscriptionPopup = (props) => {
           </ListItemIcon>
           {t("action_bar_send_test_notification")}
         </MenuItem>
+        <MenuItem onClick={handleMarkAllRead} disabled={markAllReadBusy || !subscription.new}>
+          <ListItemIcon>
+            <DoneAll fontSize="small" />
+          </ListItemIcon>
+          {t("action_bar_mark_all_read")}
+        </MenuItem>
         <MenuItem onClick={handleClearAll}>
           <ListItemIcon>
             <ClearAll fontSize="small" />
@@ -282,6 +309,16 @@ export const SubscriptionPopup = (props) => {
           autoHideDuration={3000}
           onClose={() => setShowPublishError(false)}
           message={t("message_bar_error_publishing")}
+        />
+        <Snackbar
+          open={markAllReadResult !== null}
+          autoHideDuration={3000}
+          onClose={() => setMarkAllReadResult(null)}
+          message={
+            markAllReadResult?.ok
+              ? t("notifications_mark_all_read_done", { count: markAllReadResult.count })
+              : t("notifications_mark_all_read_failed")
+          }
         />
         <ClearDialog open={clearDialogOpen} subscription={subscription} onClose={() => setClearDialogOpen(false)} />
         {isServerTopic && (

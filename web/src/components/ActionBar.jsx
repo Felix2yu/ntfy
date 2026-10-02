@@ -1,9 +1,10 @@
-import { AppBar, Toolbar, IconButton, Typography, Box, MenuItem, Button, Divider, ListItemIcon, CircularProgress, useTheme } from "@mui/material";
+import { AppBar, Toolbar, IconButton, Tooltip, Typography, Box, MenuItem, Button, Divider, ListItemIcon, CircularProgress, Snackbar, useTheme } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import * as React from "react";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import DoneAllIcon from "@mui/icons-material/DoneAll";
 import NotificationsIcon from "@mui/icons-material/Notifications";
 import NotificationsOffIcon from "@mui/icons-material/NotificationsOff";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -101,6 +102,7 @@ const ActionBar = (props) => {
         <IconButton color="inherit" size="large" edge="end" onClick={() => props.onSearchClick?.()} aria-label={t("nav_button_search")}>
           <SearchIcon />
         </IconButton>
+        {props.selected && <MarkAllReadButton subscription={props.selected} />}
         {props.selected && <HistoryButtons subscription={props.selected} />}
         {props.selected && <SettingsIcons subscription={props.selected} onUnsubscribe={props.onUnsubscribe} serverTopics={props.topics} onServerTopicsRefresh={props.onServerTopicsRefresh} />}
         <ProfileIcon />
@@ -141,6 +143,63 @@ const SettingsIcons = (props) => {
         onClose={() => setAnchorEl(null)}
         serverTopics={props.serverTopics}
         onServerTopicsRefresh={props.onServerTopicsRefresh}
+      />
+    </>
+  );
+};
+
+/**
+ * Marks every notification of the currently selected topic as read. This is an explicit action on
+ * purpose: entering a topic does not mark it as read anymore, so a topic keeps its unread badge
+ * until the user says so.
+ *
+ * Feedback: the button is disabled while there is nothing unread, shows a spinner while the read
+ * state is being published, and confirms the result in a snackbar.
+ */
+const MarkAllReadButton = (props) => {
+  const { t } = useTranslation();
+  const { subscription } = props;
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const unreadCount = subscription.new ?? 0;
+
+  const handleMarkAllRead = async () => {
+    if (busy || unreadCount === 0) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const count = await subscriptionManager.markAllNotificationsRead(subscription.id);
+      setResult({ ok: true, count });
+    } catch (e) {
+      console.error("[ActionBar] Failed to mark all notifications as read", e);
+      setResult({ ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Tooltip title={t("action_bar_mark_all_read")}>
+        <span>
+          <IconButton
+            color="inherit"
+            size="large"
+            edge="end"
+            onClick={handleMarkAllRead}
+            disabled={busy || unreadCount === 0}
+            aria-label={t("action_bar_mark_all_read")}
+          >
+            {busy ? <CircularProgress size={24} color="inherit" /> : <DoneAllIcon />}
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Snackbar
+        open={result !== null}
+        autoHideDuration={3000}
+        onClose={() => setResult(null)}
+        message={result?.ok ? t("notifications_mark_all_read_done", { count: result.count }) : t("notifications_mark_all_read_failed")}
       />
     </>
   );

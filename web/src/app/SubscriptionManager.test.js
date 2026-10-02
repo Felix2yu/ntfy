@@ -172,6 +172,48 @@ describe("SubscriptionManager.markNotificationReadAndSync", () => {
   });
 });
 
+describe("SubscriptionManager.markAllNotificationsRead", () => {
+  const subscriptionId = `${baseUrl}/mytopic`;
+
+  it("marks everything read locally, publishes the read state, and returns the count", async () => {
+    const db = fakeDb();
+    const manager = new SubscriptionManager(db);
+    await manager.upsert(baseUrl, "mytopic");
+    await addNotification(db, subscriptionId, { id: "id1", sequenceId: "seq1", new: 1, time: 1 });
+    await addNotification(db, subscriptionId, { id: "id2", sequenceId: "seq2", new: 1, time: 2 });
+    await addNotification(db, subscriptionId, { id: "id3", sequenceId: "seq3", new: 0, time: 3 });
+    api.clearMessages.mockResolvedValue(0);
+
+    const count = await manager.markAllNotificationsRead(subscriptionId);
+
+    expect(count).toBe(2);
+    expect(api.clearMessages).toHaveBeenCalledWith(baseUrl, "mytopic", ["seq1", "seq2"]);
+    expect((await db.notifications.get("id1")).new).toBe(0);
+    expect((await db.notifications.get("id2")).new).toBe(0);
+  });
+
+  it("returns 0 and does not call the server when nothing is unread", async () => {
+    const db = fakeDb();
+    const manager = new SubscriptionManager(db);
+    await manager.upsert(baseUrl, "mytopic");
+    await addNotification(db, subscriptionId, { id: "id1", sequenceId: "seq1", new: 0, time: 1 });
+
+    expect(await manager.markAllNotificationsRead(subscriptionId)).toBe(0);
+    expect(api.clearMessages).not.toHaveBeenCalled();
+  });
+
+  it("keeps the local read state when publishing fails", async () => {
+    const db = fakeDb();
+    const manager = new SubscriptionManager(db);
+    await manager.upsert(baseUrl, "mytopic");
+    await addNotification(db, subscriptionId, { id: "id1", sequenceId: "seq1", new: 1, time: 1 });
+    api.clearMessages.mockRejectedValue(new Error("no write permission"));
+
+    expect(await manager.markAllNotificationsRead(subscriptionId)).toBe(1);
+    expect((await db.notifications.get("id1")).new).toBe(0);
+  });
+});
+
 describe("SubscriptionManager.upsert", () => {
   it("merges fields into an existing subscription without clobbering local-only state", async () => {
     const db = fakeDb();

@@ -399,12 +399,10 @@ const SubscriptionItem = (props) => {
       </Badge>
     );
 
-  const handleClick = async () => {
+  // Entering a topic must NOT mark it as read. A topic stays unread until the user explicitly
+  // marks it read, either via the "Mark all as read" action or the per-notification check button.
+  const handleClick = () => {
     navigate(routes.forSubscription(subscription));
-    // Mark everything read locally first so the UI reacts immediately, then publish the read state
-    // so other devices/tabs of the same account converge on the same unread count.
-    const sequenceIds = await subscriptionManager.markNotificationsRead(subscription.id);
-    await subscriptionManager.syncNotificationsRead(subscription.id, sequenceIds);
   };
 
   return (

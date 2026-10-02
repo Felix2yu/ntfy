@@ -21,7 +21,30 @@ const (
 	WebPushAvailable = true
 
 	webPushTopicSubscribeLimit = 50
+
+	// defaultWebPushTTLSeconds is the delivery time-to-live used when neither web-push-ttl nor
+	// cache-duration are configured. A TTL of 0 means "deliver now or drop", which is fatal for
+	// mobile devices that are offline (or have the PWA suspended, as iOS does) when the message
+	// is published. 4 weeks is the maximum that WebKit/APNs will hold a message.
+	defaultWebPushTTLSeconds = 28 * 24 * 60 * 60
 )
+
+// webPushPermanentFailureStatusCodes are the push service responses that prove a subscription is
+// gone for good: 404/410 mean "unknown or expired subscription", 401/403 mean the VAPID identity
+// no longer matches the endpoint. Everything else -- most notably 429 (rate limiting) and 5xx
+// (push service outages) -- is transient, and must not remove the subscription: there is no way
+// to rebuild it without the client re-opening the app, which is exactly the failure mode we are
+// trying to fix for iOS PWAs.
+var webPushPermanentFailureStatusCodes = map[int]bool{
+	http.StatusUnauthorized: true, // 401
+	http.StatusForbidden:    true, // 403
+	http.StatusNotFound:     true, // 404
+	http.StatusGone:         true, // 410
+}
+
+func webPushSubscriptionIsGone(statusCode int) bool {
+	return webPushPermanentFailureStatusCodes[statusCode]
+}
 
 // webPushAllowedEndpointsRegexes is the host-level allow-list of web push services ntfy
 // will deliver to. Each regex anchors the scheme and matches the stable service host,
@@ -161,21 +184,53 @@ func (s *Server) sendWebPushNotification(sub *wpush.Subscription, message []byte
 		VAPIDPublicKey:  s.config.WebPushPublicKey,
 		VAPIDPrivateKey: s.config.WebPushPrivateKey,
 		Urgency:         webpush.UrgencyHigh, // iOS requires this to ensure delivery
-		TTL:             int(s.config.CacheDuration.Seconds()),
+		TTL:             s.webPushTTLSeconds(),
 	})
 	if err != nil {
-		log.Tag(tagWebPush).With(sub).With(contexters...).Err(err).Debug("Unable to publish web push message, removing endpoint")
-		if err := s.webPush.RemoveSubscriptionsByEndpoint(sub.Endpoint); err != nil {
-			return err
-		}
+		// Transport-level failure (DNS, TLS, connection reset, ...). The subscription itself may
+		// still be perfectly fine, so we must NOT remove it -- doing so used to permanently kill
+		// delivery after a single transient network hiccup, with no way to recover until the user
+		// re-opened the app.
+		log.Tag(tagWebPush).With(sub).With(contexters...).Err(err).Debug("Unable to publish web push message (transport error), keeping subscription")
 		return err
 	}
-	if (resp.StatusCode < 200 || resp.StatusCode > 299) && resp.StatusCode != 429 {
-		log.Tag(tagWebPush).With(sub).With(contexters...).Field("response_code", resp.StatusCode).Debug("Unable to publish web push message, unexpected response")
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
+		// A successful delivery proves the subscription is alive. Refresh it so that clients which
+		// cannot re-register themselves (iOS PWA, no Periodic Background Sync) are not expired by
+		// RemoveExpiredSubscriptions just because the user never opened the app again.
+		if err := s.webPush.TouchSubscriptions([]string{sub.Endpoint}); err != nil {
+			log.Tag(tagWebPush).With(sub).With(contexters...).Err(err).Warn("Unable to refresh web push subscription")
+		}
+		return nil
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		log.Tag(tagWebPush).With(sub).With(contexters...).Field("response_code", resp.StatusCode).Debug("Push service rate limited, keeping subscription")
+		return errHTTPInternalErrorWebPushUnableToPublish.With(sub).With(contexters...)
+	}
+	if webPushSubscriptionIsGone(resp.StatusCode) {
+		log.Tag(tagWebPush).With(sub).With(contexters...).Field("response_code", resp.StatusCode).Debug("Unable to publish web push message, removing endpoint")
 		if err := s.webPush.RemoveSubscriptionsByEndpoint(sub.Endpoint); err != nil {
 			return err
 		}
 		return errHTTPInternalErrorWebPushUnableToPublish.With(sub).With(contexters...)
 	}
-	return nil
+	// Transient push service failure (5xx, ...): keep the subscription and retry on next publish.
+	log.Tag(tagWebPush).With(sub).With(contexters...).Field("response_code", resp.StatusCode).Debug("Unable to publish web push message, unexpected response")
+	return errHTTPInternalErrorWebPushUnableToPublish.With(sub).With(contexters...)
+}
+
+// webPushTTLSeconds returns the delivery time-to-live for web push messages. It falls back to
+// cache-duration and then to 4 weeks, because a TTL of 0 drops the message as soon as the device
+// is not reachable at publish time.
+func (s *Server) webPushTTLSeconds() int {
+	if s.config.WebPushTTL > 0 {
+		return int(s.config.WebPushTTL.Seconds())
+	}
+	if s.config.CacheDuration > 0 {
+		return int(s.config.CacheDuration.Seconds())
+	}
+	return defaultWebPushTTLSeconds
 }
