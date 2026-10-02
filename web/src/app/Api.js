@@ -10,6 +10,7 @@ import {
 } from "./utils";
 import userManager from "./UserManager";
 import { fetchOrThrow } from "./errors";
+import { latestMessagesBySequenceId } from "./notificationUtils";
 
 class Api {
   async poll(baseUrl, topic, since) {
@@ -79,10 +80,59 @@ class Api {
     });
   }
 
+  /**
+   * Maximum number of sequence IDs sent in one bulk read request. Each sequence ID adds its own
+   * path segment, so this keeps the request URL well below common server limits.
+   */
+  static MAX_SEQUENCE_IDS_PER_REQUEST = 50;
+
   async clearMessage(baseUrl, topic, sequenceId) {
     const user = await userManager.get(baseUrl);
     const url = `${baseUrl}/${topic}/${sequenceId}/read`;
     console.log(`[Api] Marking message ${sequenceId} as read: ${url}`);
+    await fetchOrThrow(url, {
+      method: "GET",
+      headers: maybeWithAuth({}, user),
+    });
+  }
+
+  /**
+   * Marks many messages as read at once. This is used by "open topic" (which implicitly marks all
+   * notifications of that topic as read) so that other devices receive the read state too.
+   *
+   * Requests are sent in chunks and failures are tolerated: the local read state is authoritative
+   * for this device, and every chunk that does succeed published its `message_clear` events. Returns
+   * the number of sequence IDs that could not be synced.
+   */
+  async clearMessages(baseUrl, topic, sequenceIds) {
+    const uniqueIds = [...new Set(sequenceIds.filter(Boolean))];
+    if (uniqueIds.length === 0) {
+      return 0;
+    }
+    const chunks = [];
+    for (let i = 0; i < uniqueIds.length; i += Api.MAX_SEQUENCE_IDS_PER_REQUEST) {
+      chunks.push(uniqueIds.slice(i, i + Api.MAX_SEQUENCE_IDS_PER_REQUEST));
+    }
+    console.log(`[Api] Marking ${uniqueIds.length} message(s) as read in ${chunks.length} request(s)`);
+    // Sequential on purpose -- one request per chunk already is the compressed form, and staying
+    // sequential keeps us from tripping the visitor rate limiter.
+    let failed = 0;
+    await chunks.reduce(async (previous, chunk) => {
+      await previous;
+      try {
+        await this.clearMessagesChunk(baseUrl, topic, chunk);
+      } catch (e) {
+        failed += chunk.length;
+        console.error(`[Api] Failed to mark ${chunk.length} message(s) as read: ${e}`);
+      }
+    }, Promise.resolve());
+    return failed;
+  }
+
+  async clearMessagesChunk(baseUrl, topic, sequenceIds) {
+    const user = await userManager.get(baseUrl);
+    const url = `${baseUrl}/${topic}/${sequenceIds.join(",")}/read`;
+    console.log(`[Api] Marking messages ${sequenceIds.join(",")} as read: ${url}`);
     await fetchOrThrow(url, {
       method: "GET",
       headers: maybeWithAuth({}, user),
@@ -138,36 +188,33 @@ class Api {
         console.warn(`[Api, ${shortUrl}] clearTopic skipping trailing invalid line`);
       }
     }
-    const latestBySeqId = {};
-    messages.forEach((m) => {
-      const seqId = m.sequence_id || m.id;
-      if (!(seqId in latestBySeqId) || m.time >= latestBySeqId[seqId].time) {
-        latestBySeqId[seqId] = m;
-      }
-    });
-    const toDelete = Object.values(latestBySeqId).filter(
-      (m) => !m.event || m.event === 'message',
-    );
+    // Only the newest record per sequence ID matters: sequences whose newest record is already a
+    // delete event are gone anyway, and re-deleting them would only publish redundant events.
+    const latestBySequenceId = latestMessagesBySequenceId(messages);
+    const toDelete = Object.values(latestBySequenceId).filter((m) => !m.event || m.event === "message");
     console.log(`[Api, ${shortUrl}] clearTopic deleting ${toDelete.length} of ${messages.length} polled messages`);
     if (toDelete.length === 0) return 0;
-    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const failedMessages = [];
     for (const msg of toDelete) {
+      // Must be the sequence ID, not the message ID: other devices key their local notifications by
+      // sequence ID, so deleting by message ID would leave them untouched.
+      const sequenceId = msg.sequence_id || msg.id;
       let ok = false;
       for (let retry = 0; retry < 5; retry++) {
         if (retry > 0) {
           const wait = 5000 * Math.pow(2, retry - 1);
-          console.log(`[Api, ${shortUrl}] clearTopic retry ${retry + 1}/5 for ${msg.id} after ${wait}ms`);
+          console.log(`[Api, ${shortUrl}] clearTopic retry ${retry + 1}/5 for ${sequenceId} after ${wait}ms`);
           await delay(wait);
         }
         try {
-          await this.delete(baseUrl, topic, msg.id);
+          await this.delete(baseUrl, topic, sequenceId);
           ok = true;
           break;
         } catch (e) {
-          const isRateLimit = e.message && e.message.includes('42901');
+          const isRateLimit = e.message && e.message.includes("42901");
           if (!isRateLimit) {
-            console.error(`[Api, ${shortUrl}] clearTopic failed for ${msg.id}: ${e.message}`);
+            console.error(`[Api, ${shortUrl}] clearTopic failed for ${sequenceId}: ${e.message}`);
             break;
           }
         }

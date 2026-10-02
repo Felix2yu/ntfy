@@ -3,6 +3,7 @@
 
 import emojisMapped from "./emojisMapped";
 import { ACTION_HTTP, ACTION_VIEW } from "./actions";
+import { EVENT_MESSAGE } from "./events";
 
 const toEmojis = (tags) => {
   if (!tags) return [];
@@ -96,4 +97,33 @@ export const messageWithSequenceId = (message) => {
     return message;
   }
   return { ...message, sequenceId: message.sequence_id || message.id };
+};
+
+/**
+ * True if `message` supersedes `existing` for the same sequence ID. Later timestamps win; at equal
+ * timestamps a delete/clear action wins, because an action message always refers to an earlier
+ * message of the same sequence. Comparing timestamps alone lets a same-second message shadow its
+ * own delete/clear event, i.e. it resurrects the notification on another device.
+ */
+export const supersedes = (message, existing) => {
+  if (message.time !== existing.time) {
+    return message.time > existing.time;
+  }
+  const rank = (m) => (m.event && m.event !== EVENT_MESSAGE ? 1 : 0);
+  return rank(message) > rank(existing);
+};
+
+/**
+ * Reduces a list of server messages to the newest record per sequence ID. Shared by the poller and
+ * by the "clear topic" flow, which both must agree on what is still alive for a sequence.
+ */
+export const latestMessagesBySequenceId = (messages) => {
+  const latest = {};
+  messages.forEach((message) => {
+    const sequenceId = message.sequence_id || message.id;
+    if (!(sequenceId in latest) || supersedes(message, latest[sequenceId])) {
+      latest[sequenceId] = message;
+    }
+  });
+  return latest;
 };

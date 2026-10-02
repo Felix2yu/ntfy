@@ -2,6 +2,7 @@ import api from "./Api";
 import prefs from "./Prefs";
 import subscriptionManager from "./SubscriptionManager";
 import { EVENT_MESSAGE, EVENT_MESSAGE_DELETE, EVENT_MESSAGE_CLEAR } from "./events";
+import { latestMessagesBySequenceId } from "./notificationUtils";
 
 const delayMillis = 2000; // 2 seconds
 const intervalMillis = 300000; // 5 minutes
@@ -85,38 +86,6 @@ class Poller {
     } else {
       console.log(`[Poller] No new notifications found for ${subscription.id}`);
     }
-
-    // Reconcile: remove local notifications that no longer exist on the server.
-    // This handles cases where the device missed WebSocket delete events (e.g., was offline).
-    if (notifications.length > 0) {
-      await this.reconcileDeletedNotifications(subscription, notifications);
-    }
-  }
-
-  /**
-   * Compares local notifications with the server response and removes any local
-   * notification whose ID is not in the server response. Only removes notifications
-   * that are within the time window of the server response (i.e., notifications
-   * that the server should have returned if they still existed).
-   */
-  async reconcileDeletedNotifications(subscription, serverNotifications) {
-    const serverIds = new Set(serverNotifications.map((n) => n.id));
-    const localNotifications = await subscriptionManager.getNotifications(subscription.id);
-    if (localNotifications.length === 0) return;
-
-    // Find the time range of the server response
-    const serverTimes = serverNotifications.map((n) => n.time);
-    const minServerTime = Math.min(...serverTimes);
-
-    // Local notifications that are within the server's time window but missing from the response
-    const staleIds = localNotifications
-      .filter((n) => n.time >= minServerTime && !serverIds.has(n.id))
-      .map((n) => n.id);
-
-    if (staleIds.length > 0) {
-      console.log(`[Poller] Reconciling: removing ${staleIds.length} stale notification(s) for ${subscription.id}`, staleIds);
-      await Promise.all(staleIds.map((id) => subscriptionManager.deleteNotification(id)));
-    }
   }
 
   pollInBackground(subscription) {
@@ -130,18 +99,16 @@ class Poller {
   }
 
   /**
-   * Groups notifications by sequenceId and returns only the latest (highest time) for each sequence.
-   * Returns an object mapping sequenceId -> latest notification.
+   * Groups notifications by sequenceId and returns only the latest record for each sequence.
+   *
+   * Deletions are handled by this same grouping, see "Delete all existing notifications ..." above.
+   * Note that we deliberately do NOT treat "absent from the server response" as "deleted": the poll
+   * uses since=<last message id>, so everything this device already stored is legitimately missing
+   * from the response. Deriving deletions from that absence deleted perfectly valid notifications
+   * whenever a delete/clear event shared a timestamp with its message.
    */
   latestNotificationsBySequenceId(notifications) {
-    const latestBySequenceId = {};
-    notifications.forEach((notification) => {
-      const sequenceId = notification.sequence_id || notification.id;
-      if (!(sequenceId in latestBySequenceId) || notification.time >= latestBySequenceId[sequenceId].time) {
-        latestBySequenceId[sequenceId] = notification;
-      }
-    });
-    return latestBySequenceId;
+    return latestMessagesBySequenceId(notifications);
   }
 }
 

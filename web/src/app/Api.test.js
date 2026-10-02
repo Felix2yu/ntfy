@@ -125,3 +125,77 @@ describe("Api web push", () => {
     );
   });
 });
+
+describe("Api.clearMessage", () => {
+  it("GETs the read endpoint for the sequence ID", async () => {
+    fetchMock.mockResolvedValue({ status: 200 });
+    await api.clearMessage("https://ntfy.sh", "mytopic", "abc123");
+    expect(fetchMock).toHaveBeenCalledWith("https://ntfy.sh/mytopic/abc123/read", expect.objectContaining({ method: "GET" }));
+  });
+});
+
+describe("Api.clearMessages", () => {
+  it("sends a single request when everything fits into one chunk", async () => {
+    fetchMock.mockResolvedValue({ status: 200 });
+    const failed = await api.clearMessages("https://ntfy.sh", "mytopic", ["a", "b"]);
+    expect(failed).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("https://ntfy.sh/mytopic/a,b/read", expect.objectContaining({ method: "GET" }));
+  });
+
+  it("chunks large sequence ID lists and deduplicates them", async () => {
+    fetchMock.mockResolvedValue({ status: 200 });
+    const failed = await api.clearMessages("https://ntfy.sh", "mytopic", [
+      ...Array.from({ length: 120 }, (_, i) => `id${i}`),
+      "id0", // duplicate
+    ]);
+    expect(failed).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(3); // 120 / 50
+    expect(fetchMock.mock.calls[0][0]).toBe(`https://ntfy.sh/mytopic/${Array.from({ length: 50 }, (_, i) => `id${i}`).join(",")}/read`);
+  });
+
+  it("does not throw when the server rejects a chunk", async () => {
+    fetchMock.mockRejectedValue(new Error("boom"));
+    const failed = await api.clearMessages("https://ntfy.sh", "mytopic", ["a", "b"]);
+    expect(failed).toBe(2);
+  });
+
+  it("does nothing for an empty list", async () => {
+    expect(await api.clearMessages("https://ntfy.sh", "mytopic", [])).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("Api.clearTopic", () => {
+  const ndjson = (messages) => messages.map((m) => JSON.stringify(m)).join("\n");
+
+  const mockPoll = async (messages) => {
+    fetchMock.mockImplementation(async (url) => {
+      if (String(url).includes("/json?")) {
+        // The clearTopic impl streams the response; emulate just enough of ReadableStream.
+        return new Response(ndjson(messages));
+      }
+      return { status: 200 };
+    });
+  };
+
+  it("deletes by sequence ID, not by message ID", async () => {
+    await mockPoll([{ id: "msgid1", sequence_id: "seq1", time: 1, event: "message" }]);
+    await api.clearTopic("https://ntfy.sh", "mytopic", undefined);
+    const deleteCalls = fetchMock.mock.calls.filter(([, opts]) => opts?.method === "DELETE");
+    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls[0][0]).toBe("https://ntfy.sh/mytopic/seq1");
+  });
+
+  it("skips sequences that were already deleted", async () => {
+    await mockPoll([
+      { id: "msgid1", sequence_id: "seq1", time: 1, event: "message" },
+      { id: "msgid2", sequence_id: "seq1", time: 2, event: "message_delete" },
+      { id: "msgid3", sequence_id: "seq2", time: 3, event: "message" },
+    ]);
+    const deleted = await api.clearTopic("https://ntfy.sh", "mytopic", undefined);
+    const deleteCalls = fetchMock.mock.calls.filter(([, opts]) => opts?.method === "DELETE");
+    expect(deleted).toBe(1);
+    expect(deleteCalls.map(([url]) => url)).toEqual(["https://ntfy.sh/mytopic/seq2"]);
+  });
+});

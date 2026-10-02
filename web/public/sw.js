@@ -311,7 +311,8 @@ const handleClick = async (event) => {
     if (event.action) {
       const action = event.notification.data.message.actions.find(({ label }) => event.action === label);
 
-      // Helper to clear notification and mark as read
+      // Helper to clear notification and mark as read. Publishes the read state to the server so
+      // the other devices of this account see the same read state and unread count.
       const clearNotification = async () => {
         event.notification.close();
         const { subscriptionId, message: msg } = event.notification.data;
@@ -321,6 +322,14 @@ const handleClick = async (event) => {
           await db.notifications.where({ subscriptionId, sequenceId: seqId }).modify({ new: 0 });
           const badgeCount = await db.notifications.where({ new: 1 }).count();
           self.navigator.setAppBadge?.(badgeCount);
+          const subscription = await db.subscriptions.get(subscriptionId);
+          if (subscription) {
+            try {
+              await fetch(`${subscription.baseUrl}/${subscription.topic}/${seqId}/read`);
+            } catch (e) {
+              console.error("[ServiceWorker] Failed to sync read state to server", e);
+            }
+          }
         }
       };
 

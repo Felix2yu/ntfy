@@ -282,8 +282,50 @@ export class SubscriptionManager {
     await this.db.notifications.where({ subscriptionId, sequenceId }).modify({ new: 0 });
   }
 
+  /**
+   * Marks every notification of a subscription as read and returns the sequence IDs that changed
+   * state. The caller publishes those IDs to the server (see syncNotificationsRead) so that other
+   * devices end up with the same read state and unread count.
+   */
   async markNotificationsRead(subscriptionId) {
-    await this.db.notifications.where({ subscriptionId, new: 1 }).modify({ new: 0 });
+    const unread = await this.db.notifications.where({ subscriptionId, new: 1 }).toArray();
+    const sequenceIds = unread.map((notification) => notification.sequenceId || notification.id);
+    if (unread.length > 0) {
+      await this.db.notifications.bulkPut(unread.map((notification) => ({ ...notification, new: 0 })));
+    }
+    return sequenceIds;
+  }
+
+  /**
+   * Publishes the read state for the given sequence IDs so every other subscriber of the topic
+   * (other devices, tabs, service worker) marks the same messages as read.
+   *
+   * Failures -- offline, no write permission, rate limited -- are logged and swallowed: the local
+   * read state stands either way, matching how the single-notification read button behaves.
+   */
+  async syncNotificationsRead(subscriptionId, sequenceIds) {
+    if (!sequenceIds || sequenceIds.length === 0) {
+      return;
+    }
+    const subscription = await this.get(subscriptionId);
+    if (!subscription) {
+      console.error(`[SubscriptionManager] Not syncing read state, unknown subscription ${subscriptionId}`);
+      return;
+    }
+    try {
+      await api.clearMessages(subscription.baseUrl, subscription.topic, sequenceIds);
+    } catch (e) {
+      console.error(`[SubscriptionManager] Failed to sync read state for ${subscriptionId}`, e);
+    }
+  }
+
+  /**
+   * Marks a single notification as read, both locally and on the server. Used by the read button and
+   * by user actions that carry `clear: true`.
+   */
+  async markNotificationReadAndSync(notification) {
+    await this.syncNotificationsRead(notification.subscriptionId, [notification.sequenceId || notification.id]);
+    await this.markNotificationRead(notification.id);
   }
 
   async setMutedUntil(subscriptionId, mutedUntil) {

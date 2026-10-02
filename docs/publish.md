@@ -4221,6 +4221,29 @@ An example response from the server with the `message_clear` event may look like
 {"id":"jkl012","time":1673542305,"event":"message_clear","topic":"mytopic","sequence_id":"my-download-123"}
 ```
 
+#### Clearing several notifications at once
+Several notifications can be cleared in one request by passing a **comma-separated list of sequence IDs**
+(`/clear` accepts the same list). This emits one `message_clear` event per sequence ID, so all devices end up
+with the same read state and unread count:
+
+=== "Command line (curl)"
+    ```bash
+    curl -X PUT ntfy.sh/mytopic/my-download-123,my-download-124/clear
+    ```
+
+=== "HTTP"
+    ``` http
+    PUT /mytopic/my-download-123,my-download-124/clear HTTP/1.1
+    Host: ntfy.sh
+    ```
+
+In this case the response is a JSON array with one `message_clear` message per sequence ID:
+
+```json
+[{"id":"jkl012","time":1673542305,"event":"message_clear","topic":"mytopic","sequence_id":"my-download-123"},
+ {"id":"mno345","time":1673542305,"event":"message_clear","topic":"mytopic","sequence_id":"my-download-124"}]
+```
+
 ### Deleting notifications
 Deleting a notification means **removing it from the notification drawer and from the client's database**.
 

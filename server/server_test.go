@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -4669,6 +4670,63 @@ func TestServer_ClearMessage_GET(t *testing.T) {
 		clearMsg2 := toMessage(t, response.Body.String())
 		require.Equal(t, "seq789", clearMsg2.SequenceID)
 		require.Equal(t, "message_clear", clearMsg2.Event)
+	})
+}
+
+// Marking several messages read must publish one message_clear per sequence ID, so that every
+// other device ends up with the same read state (this is what "open topic" does).
+func TestServer_ClearMessages_Bulk(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		t.Parallel()
+		s := newTestServer(t, newTestConfig(t, databaseURL))
+
+		require.Equal(t, 200, request(t, s, "PUT", "/mytopic/bulk-seq1", "message 1", nil).Code)
+		require.Equal(t, 200, request(t, s, "PUT", "/mytopic/bulk-seq2", "message 2", nil).Code)
+
+		response := request(t, s, "GET", "/mytopic/bulk-seq1,bulk-seq2/read", "", nil)
+		require.Equal(t, 200, response.Code)
+
+		var clearMessages []*model.Message
+		require.Nil(t, json.Unmarshal(response.Body.Bytes(), &clearMessages))
+		require.Equal(t, 2, len(clearMessages))
+		require.Equal(t, "message_clear", clearMessages[0].Event)
+		require.Equal(t, "message_clear", clearMessages[1].Event)
+		require.Equal(t, "bulk-seq1", clearMessages[0].SequenceID)
+		require.Equal(t, "bulk-seq2", clearMessages[1].SequenceID)
+
+		// Both clear events are replayable, so devices that were offline can catch up later
+		response = request(t, s, "GET", "/mytopic/json?poll=1", "", nil)
+		require.Equal(t, 200, response.Code)
+		lines := strings.Split(strings.TrimSpace(response.Body.String()), "\n")
+		require.Equal(t, 4, len(lines))
+
+		var clearCount int
+		for _, line := range lines {
+			msg := toMessage(t, line)
+			if msg.Event == model.MessageClearEvent {
+				clearCount++
+			}
+			// Action messages must not be stored as already expired, otherwise they would be
+			// pruned before other devices can consume them (see handlePublishInternal).
+			require.Equal(t, msg.Expires, int64(math.MaxInt64))
+		}
+		require.Equal(t, 2, clearCount)
+	})
+}
+
+// A single sequence ID must keep returning a plain message object, not an array.
+func TestServer_ClearMessage_ResponseShapeUnchanged(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		t.Parallel()
+		s := newTestServer(t, newTestConfig(t, databaseURL))
+
+		require.Equal(t, 200, request(t, s, "PUT", "/mytopic/single-seq", "message", nil).Code)
+
+		response := request(t, s, "PUT", "/mytopic/single-seq/read", "", nil)
+		require.Equal(t, 200, response.Code)
+		msg := toMessage(t, response.Body.String())
+		require.Equal(t, "message_clear", msg.Event)
+		require.Equal(t, "single-seq", msg.SequenceID)
 	})
 }
 

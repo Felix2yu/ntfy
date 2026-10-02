@@ -306,7 +306,6 @@ const SubscriptionList = (props) => {
 const TopicList = (props) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const subscriptionManager = require("../app/SubscriptionManager").default;
 
   const handleTopicClick = async (topic) => {
     const baseUrl = config.base_url;
@@ -359,7 +358,10 @@ const SubscriptionItem = (props) => {
 
   const handleClick = async () => {
     navigate(routes.forSubscription(subscription));
-    await subscriptionManager.markNotificationsRead(subscription.id);
+    // Mark everything read locally first so the UI reacts immediately, then publish the read state
+    // so other devices/tabs of the same account converge on the same unread count.
+    const sequenceIds = await subscriptionManager.markNotificationsRead(subscription.id);
+    await subscriptionManager.syncNotificationsRead(subscription.id, sequenceIds);
   };
 
   return (

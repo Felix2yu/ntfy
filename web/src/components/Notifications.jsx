@@ -230,17 +230,9 @@ const NotificationItem = (props) => {
   };
   const handleMarkRead = async () => {
     console.log(`[Notifications] Marking notification ${notification.id} as read`);
-    // Sync the read state via the server (message_clear event) so other devices mark it
-    // read as well; fall back to local-only on failure (e.g. offline, no write permission).
-    try {
-      const subscription = await subscriptionManager.get(notification.subscriptionId);
-      if (subscription) {
-        await api.clearMessage(subscription.baseUrl, subscription.topic, notification.sequenceId || notification.id);
-      }
-    } catch (e) {
-      console.error(`[Notifications] Failed to sync read state to server, marking read locally`, e);
-    }
-    await subscriptionManager.markNotificationRead(notification.id);
+    // Sync the read state via the server (message_clear event) so other devices mark it read as
+    // well; falls back to local-only on failure (e.g. offline, no write permission).
+    await subscriptionManager.markNotificationReadAndSync(notification);
   };
   const handleCopy = (s) => {
     copyToClipboard(s);
@@ -510,7 +502,9 @@ const clearNotification = async (notification) => {
   if (subscription) {
     await notifier.cancel(subscription, notification);
   }
-  await subscriptionManager.markNotificationRead(notification.id);
+  // Marks it read locally and publishes the read state, so the other devices agree (previously this
+  // only touched this device's IndexedDB).
+  await subscriptionManager.markNotificationReadAndSync(notification);
 };
 
 const performHttpAction = async (notification, action) => {

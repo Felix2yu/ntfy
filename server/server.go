@@ -92,9 +92,11 @@ var (
 	authPathRegex          = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}(,[-_A-Za-z0-9]{1,64})*/auth$`)
 	publishPathRegex       = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/(publish|send|trigger)$`)
 	updatePathRegex        = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}$`)
-	clearPathRegex         = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}/(read|clear)$`)
-	deletePathRegex        = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}/delete$`)
-	sequenceIDRegex        = topicRegex
+	// clearPathRegex also accepts a comma-separated list of sequence IDs, so that a client can mark
+	// several messages (e.g. a whole topic) as read in a single request.
+	clearPathRegex  = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}(,[-_A-Za-z0-9]{1,64})*/(read|clear)$`)
+	deletePathRegex = regexp.MustCompile(`^/[-_A-Za-z0-9]{1,64}/[-_A-Za-z0-9]{1,64}/delete$`)
+	sequenceIDRegex = topicRegex
 
 	webAppConfigPath              = "/config.js"
 	webAppManifestPath            = "/manifest.webmanifest"
@@ -1098,44 +1100,59 @@ func (s *Server) handleActionMessage(w http.ResponseWriter, r *http.Request, v *
 	if err != nil {
 		return err
 	}
-	if !util.ContainsIP(s.config.VisitorRequestExemptPrefixes, v.ip) && !vrate.MessageAllowed() {
-		return errHTTPTooManyRequestsLimitMessages.With(t)
-	}
-	sequenceID, e := s.sequenceIDFromPath(r.URL.Path)
+	sequenceIDs, e := s.sequenceIDsFromPath(r.URL.Path)
 	if e != nil {
 		return e.With(t)
 	}
-	// Create an action message with the given event type
-	m := model.NewActionMessage(event, t.ID, sequenceID)
-	m.Sender = v.IP()
-	m.User = v.MaybeUserID()
-	m.Expires = time.Unix(m.Time, 0).Add(v.Limits().MessageExpiryDuration).Unix()
-	// Publish to subscribers, Firebase (for Android clients), and web push endpoints
-	if err := s.dispatch(v, t, m, dispatchOpts{firebase: true, webPush: true}); err != nil {
-		return err
+	// Same rule as the publish path: a zero expiry duration means infinite retention, and must not
+	// turn into "already expired" (see handlePublishInternal). Otherwise a /read or /delete action
+	// message could be pruned before other devices ever get a chance to catch up on it.
+	var messageExpiry int64 = math.MaxInt64
+	if expiryDuration := v.Limits().MessageExpiryDuration; expiryDuration > 0 {
+		messageExpiry = time.Now().Add(expiryDuration).Unix()
 	}
-	if event == model.MessageDeleteEvent {
-		// Delete any existing scheduled message with the same sequence ID
-		deletedIDs, err := s.messageCache.DeleteScheduledBySequenceID(t.ID, sequenceID)
-		if err != nil {
+	published := make([]*model.Message, 0, len(sequenceIDs))
+	for _, sequenceID := range sequenceIDs {
+		// Every action message consumes one unit of the visitor's message budget
+		if !util.ContainsIP(s.config.VisitorRequestExemptPrefixes, v.ip) && !vrate.MessageAllowed() {
+			return errHTTPTooManyRequestsLimitMessages.With(t)
+		}
+		// Create an action message with the given event type
+		m := model.NewActionMessage(event, t.ID, sequenceID)
+		m.Sender = v.IP()
+		m.User = v.MaybeUserID()
+		m.Expires = messageExpiry
+		// Publish to subscribers, Firebase (for Android clients), and web push endpoints
+		if err := s.dispatch(v, t, m, dispatchOpts{firebase: true, webPush: true}); err != nil {
 			return err
 		}
-		// Delete attachment files for deleted scheduled messages
-		if s.attachment != nil && len(deletedIDs) > 0 {
-			if err := s.attachment.Remove(deletedIDs...); err != nil {
-				logvrm(v, r, m).Tag(tagPublish).Err(err).Warn("Error removing attachments for deleted scheduled messages")
+		if event == model.MessageDeleteEvent {
+			// Delete any existing scheduled message with the same sequence ID
+			deletedIDs, err := s.messageCache.DeleteScheduledBySequenceID(t.ID, sequenceID)
+			if err != nil {
+				return err
+			}
+			// Delete attachment files for deleted scheduled messages
+			if s.attachment != nil && len(deletedIDs) > 0 {
+				if err := s.attachment.Remove(deletedIDs...); err != nil {
+					logvrm(v, r, m).Tag(tagPublish).Err(err).Warn("Error removing attachments for deleted scheduled messages")
+				}
 			}
 		}
+		// Add to message cache
+		if err := s.messageCache.AddMessage(m); err != nil {
+			return err
+		}
+		logvrm(v, r, m).Tag(tagPublish).Debug("Published %s for sequence ID %s", event, sequenceID)
+		s.mu.Lock()
+		s.messages++
+		s.mu.Unlock()
+		published = append(published, m.ForJSON())
 	}
-	// Add to message cache
-	if err := s.messageCache.AddMessage(m); err != nil {
-		return err
+	if len(published) == 1 {
+		return s.writeJSON(w, published[0])
 	}
-	logvrm(v, r, m).Tag(tagPublish).Debug("Published %s for sequence ID %s", event, sequenceID)
-	s.mu.Lock()
-	s.messages++
-	s.mu.Unlock()
-	return s.writeJSON(w, m.ForJSON())
+	return s.writeJSON(w, published)
 }
 
 func (s *Server) sendToFirebase(v *visitor, m *model.Message) {
@@ -1914,6 +1931,25 @@ func (s *Server) topicsFromPath(v *visitor, path string) ([]*topic, string, erro
 		return nil, "", err
 	}
 	return topics, parts[1], nil
+}
+
+// sequenceIDsFromPath returns the sequence IDs from a path like /mytopic/sequenceIdHere, or the
+// comma-separated list from a path like /mytopic/id1,id2. Sequence IDs are validated individually.
+func (s *Server) sequenceIDsFromPath(path string) ([]string, *errHTTP) {
+	parts := strings.Split(path, "/")
+	if len(parts) < 3 {
+		return nil, errHTTPBadRequestSequenceIDInvalid
+	}
+	sequenceIDs := util.SplitNoEmpty(parts[2], ",")
+	if len(sequenceIDs) == 0 {
+		return nil, errHTTPBadRequestSequenceIDInvalid
+	}
+	for _, sequenceID := range sequenceIDs {
+		if !sequenceIDRegex.MatchString(sequenceID) {
+			return nil, errHTTPBadRequestSequenceIDInvalid
+		}
+	}
+	return sequenceIDs, nil
 }
 
 // sequenceIDFromPath returns the sequence ID from a path like /mytopic/sequenceIdHere
