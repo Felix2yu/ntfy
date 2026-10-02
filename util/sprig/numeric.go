@@ -391,16 +391,24 @@ func round(a any, p int, rOpt ...float64) float64 {
 	}
 	val := toFloat64(a)
 	places := toFloat64(p)
-	var round float64
 	pow := math.Pow(10, places)
 	digit := pow * val
 	_, div := math.Modf(digit)
-	if div >= roundOn {
-		round = math.Ceil(digit)
-	} else {
-		round = math.Floor(digit)
+	//
+	// 阈值比较带 1 个 ULP 的相对容差。原实现直接 `div >= roundOn`，而 div 来自
+	// 浮点乘法 pow*val：恰好等于阈值（.5）的值常只差一个 ULP
+	// （如 123.5555*1000 实为 123555.499999999979），于是判false、本该进位被 Floor。
+	// 这是 sprig 上游的既有缺陷。
+	//
+	// 容差取 |digit|*2^-52（float64 的相对 ULP），只吸收表示误差，不会把
+	// 真实低于阈值的输入误判：1.4999999999 与阈值差 3e5 个 ULP，仍判为未达到。
+	if math.IsNaN(digit) || math.IsInf(digit, 0) {
+		return digit / pow
 	}
-	return round / pow
+	if tol := math.Abs(digit) * 2.220446049250313e-16; roundOn-div > tol { // 2^-52 = float64 相对 ULP
+		return math.Floor(digit) / pow
+	}
+	return math.Ceil(digit) / pow
 }
 
 // toDecimal converts a value from octal to decimal.

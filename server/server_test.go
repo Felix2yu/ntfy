@@ -212,8 +212,9 @@ func TestServer_PublishAndSubscribe(t *testing.T) {
 		require.Equal(t, "", messages[1].Title)
 		require.Equal(t, 0, messages[1].Priority)
 		require.Nil(t, messages[1].Tags)
-		require.True(t, time.Now().Add(12*time.Hour-5*time.Second).Unix() < messages[1].Expires)
-		require.True(t, time.Now().Add(12*time.Hour+5*time.Second).Unix() > messages[1].Expires)
+		//期望值取自配置的 CacheDuration，不写死 12h：本仓库把 DefaultCacheDuration
+		// 改成了 0（永不过期，见 563c9de2），写死会让本用例在默认配置下必失败。
+		requireExpiryAround(t, s.config.CacheDuration, messages[1].Expires)
 
 		require.Equal(t, model.MessageEvent, messages[2].Event)
 		require.Equal(t, "mytopic", messages[2].Topic)
@@ -540,8 +541,10 @@ func TestServer_PublishAt_Expires(t *testing.T) {
 		})
 		require.Equal(t, 200, response.Code)
 		m := toMessage(t, response.Body.String())
-		require.True(t, m.Expires > time.Now().Add(12*time.Hour+48*time.Hour-time.Minute).Unix())
-		require.True(t, m.Expires < time.Now().Add(12*time.Hour+48*time.Hour+time.Minute).Unix())
+		// CacheDuration 为 0（= 无限保留）时，"In" 不会缩短保留期：
+		// handlePublishInternal 显式判MessageExpiryDuration == 0 → Expires = MaxInt64。
+		// 故按want<=0 的分支断言，而不是"now+48h"。
+		requireExpiryAround(t, s.config.CacheDuration, m.Expires)
 	})
 }
 
@@ -653,7 +656,15 @@ func TestServer_PublishAndMultiPoll(t *testing.T) {
 func TestServer_PublishWithNopCache(t *testing.T) {
 	forEachBackend(t, func(t *testing.T, databaseURL string) {
 		c := newTestConfig(t, databaseURL)
-		c.CacheDuration = 0
+		// 要拿到 NopStore，光设 CacheDuration=0 不够：createMessageCache 只在
+		// 「CacheDuration==0 且没有 CacheFile 且没有 DB 连接」时才返回 NopStore。
+		// 本仓库把 CacheDuration 默认改成了 0（永不过期，见 563c9de2），
+		// 所以这里必须显式清空 CacheFile / DatabaseURL 才能真正禁用缓存。
+		if databaseURL == "" {
+			c.CacheFile = ""
+		} else {
+			c.DatabaseURL = ""
+		}
 		s := newTestServer(t, c)
 
 		subscribeRR := httptest.NewRecorder()
@@ -2387,6 +2398,11 @@ func TestServer_PublishAsJSON_Invalid(t *testing.T) {
 func TestServer_PublishWithTierBasedMessageLimitAndExpiry(t *testing.T) {
 	forEachBackend(t, func(t *testing.T, databaseURL string) {
 		c := newTestConfigWithAuthFile(t, databaseURL)
+		// 必须给一个非零 CacheDuration：pruneMessages 在 CacheDuration==0 时
+		// 直接 return（见 server_manager.go，"Infinite retention, no messages to prune"），
+		// 而本仓库的 DefaultCacheDuration 已被改成 0（永不过期，见 563c9de2），
+		// 于是"prune 后消息消失"这一段根本不会执行。
+		c.CacheDuration = 12 * time.Hour
 		s := newTestServer(t, c)
 
 		// Create tier with certain limits
@@ -2412,13 +2428,22 @@ func TestServer_PublishWithTierBasedMessageLimitAndExpiry(t *testing.T) {
 		})
 		require.Equal(t, 429, response.Code)
 
-		// Run pruning and see if they are gone
+		// Run pruning and see if they are gone。
+		// 注意这里必须用匿名访问（不带 Authorization）：tier 的消息配额是纯令牌桶
+		// （visitor.MessageAllowed → limiter.Allow()，只减不增、靠时间 replenish），
+		// 发布 6 条后桶已空，且**没有任何机制**因为消息过期而返还配额。
+		// 负值 MessageExpiryDuration 腾的是存储空间，不是配额。
+		// 所以带认证的 GET 必然 429 —— 那是配额行为，不是本用例要测的东西。
 		s.execManager()
-		response = request(t, s, "GET", "/mytopic/json?poll=1", "", map[string]string{
-			"Authorization": util.BasicAuth("phil", "phil"),
-		})
+		response = request(t, s, "GET", "/mytopic/json?poll=1", "", nil)
 		require.Equal(t, 200, response.Code)
 		require.Empty(t, response.Body)
+
+		// 配额确实被耗尽了：同一用户再发一条仍是 429
+		response = request(t, s, "PUT", "/mytopic", "still too much", map[string]string{
+			"Authorization": util.BasicAuth("phil", "phil"),
+		})
+		require.Equal(t, 429, response.Code)
 	})
 }
 
@@ -5247,6 +5272,23 @@ func toMessages(t *testing.T, s string) []*model.Message {
 		messages = append(messages, toMessage(t, scanner.Text()))
 	}
 	return messages
+}
+
+// requireExpiryAround 断言消息的过期时间戳落在「now + want ± 1分钟」区间内。
+//
+// 用它替代写死12*time.Hour 的断言：本仓库把 DefaultCacheDuration 从12h 改成0
+// （永不过期，见 563c9de2），凡是按上游 12h 断言的用例在默认配置下都必失败。
+// want<=0 表示永不过期，此时要求 Expires 为 math.MaxInt64。
+func requireExpiryAround(t *testing.T, want time.Duration, expires int64) {
+	t.Helper()
+	if want <= 0 {
+		require.Equal(t, int64(math.MaxInt64), expires, "want<=0 时应为永不过期")
+		return
+	}
+	center := time.Now().Add(want).Unix()
+	slack := int64(time.Minute / time.Second) // 1 分钟，转成秒
+	require.True(t, center-slack < expires, "expires=%d 应晚于 now+%v-1m", expires, want)
+	require.True(t, center+slack > expires, "expires=%d 应早于 now+%v+1m", expires, want)
 }
 
 func toMessage(t *testing.T, s string) *model.Message {

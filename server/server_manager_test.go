@@ -1,9 +1,11 @@
 package server
 
 import (
+	"testing"
+	"time"
+
 	"github.com/stretchr/testify/require"
 	"heckel.io/ntfy/v2/model"
-	"testing"
 )
 
 func TestServer_Manager_Prune_Messages_Without_Attachments_DoesNotPanic(t *testing.T) {
@@ -11,6 +13,11 @@ func TestServer_Manager_Prune_Messages_Without_Attachments_DoesNotPanic(t *testi
 		// Tests that the manager runs without attachment-cache-dir set, see #617
 		c := newTestConfig(t, databaseURL)
 		c.AttachmentCacheDir = ""
+		// 必须给非零CacheDuration：pruneMessages 在 CacheDuration==0 时直接 return
+		// （"Infinite retention, no messages to prune"），消息不会被删，
+		// 本用例要断言的 "Actually deleted" 就不会成立。
+		// 本仓库 DefaultCacheDuration 已改成 0（永不过期，见 563c9de2）。
+		c.CacheDuration = 12 * time.Hour
 		s := newTestServer(t, c)
 
 		// Publish a message
