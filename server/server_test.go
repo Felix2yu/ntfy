@@ -4593,6 +4593,86 @@ func TestServer_DeleteMessage_GET(t *testing.T) {
 	})
 }
 
+func TestServer_DeleteTopic(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		t.Parallel()
+		s := newTestServer(t, newTestConfig(t, databaseURL))
+
+		// Publish messages to two topics
+		response := request(t, s, "PUT", "/mytopic", "message 1", nil)
+		require.Equal(t, 200, response.Code)
+		response = request(t, s, "PUT", "/mytopic", "message 2", nil)
+		require.Equal(t, 200, response.Code)
+		response = request(t, s, "PUT", "/othertopic", "keep me", nil)
+		require.Equal(t, 200, response.Code)
+
+		// Both topics are listed by /v1/topics
+		response = request(t, s, "GET", "/v1/topics", "", nil)
+		require.Equal(t, 200, response.Code)
+		topics := toTopics(t, response.Body.String())
+		require.Equal(t, []string{"mytopic", "othertopic"}, topics)
+
+		// Retire mytopic
+		response = request(t, s, "DELETE", "/v1/topics/mytopic", "", nil)
+		require.Equal(t, 200, response.Code)
+		require.Equal(t, `{"topic":"mytopic","deleted_messages":2}`+"\n", response.Body.String())
+
+		// mytopic is gone from the list, and its messages are purged
+		response = request(t, s, "GET", "/v1/topics", "", nil)
+		require.Equal(t, 200, response.Code)
+		topics = toTopics(t, response.Body.String())
+		require.Equal(t, []string{"othertopic"}, topics)
+
+		response = request(t, s, "GET", "/mytopic/json?poll=1", "", nil)
+		require.Equal(t, 200, response.Code)
+		require.Equal(t, "", strings.TrimSpace(response.Body.String()))
+
+		// othertopic is unaffected
+		response = request(t, s, "GET", "/othertopic/json?poll=1", "", nil)
+		require.Equal(t, 200, response.Code)
+		lines := strings.Split(strings.TrimSpace(response.Body.String()), "\n")
+		require.Equal(t, 1, len(lines))
+		require.Equal(t, "keep me", toMessage(t, lines[0]).Message)
+
+		// Retiring a topic with no cached messages succeeds with 0
+		response = request(t, s, "DELETE", "/v1/topics/mytopic", "", nil)
+		require.Equal(t, 200, response.Code)
+		require.Equal(t, `{"topic":"mytopic","deleted_messages":0}`+"\n", response.Body.String())
+
+		// Invalid topic names are rejected
+		response = request(t, s, "DELETE", "/v1/topics/invalid/topic", "", nil)
+		require.Equal(t, 404, response.Code)
+	})
+}
+
+func TestServer_DeleteTopic_Unauthorized(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		t.Parallel()
+		c := newTestConfigWithAuthFile(t, databaseURL)
+		c.AuthDefault = user.PermissionDenyAll
+		s := newTestServer(t, c)
+		require.Nil(t, s.userManager.AddUser("phil", "phil", user.RoleAdmin, false))
+		require.Nil(t, s.userManager.AddUser("ben", "ben", user.RoleUser, false))
+
+		// Publishing is denied for anonymous users, but add a message directly to the cache
+		require.Nil(t, s.messageCache.AddMessage(&model.Message{ID: "mid1", Event: model.MessageEvent, Topic: "mytopic", Message: "secret"}))
+
+		// Anonymous and non-authorized users cannot retire the topic
+		response := request(t, s, "DELETE", "/v1/topics/mytopic", "", nil)
+		require.Equal(t, 403, response.Code)
+		response = request(t, s, "DELETE", "/v1/topics/mytopic", "", map[string]string{
+			"Authorization": util.BasicAuth("ben", "ben"),
+		})
+		require.Equal(t, 403, response.Code)
+
+		// Admins can
+		response = request(t, s, "DELETE", "/v1/topics/mytopic", "", map[string]string{
+			"Authorization": util.BasicAuth("phil", "phil"),
+		})
+		require.Equal(t, 200, response.Code)
+	})
+}
+
 func TestServer_ClearMessage(t *testing.T) {
 	forEachBackend(t, func(t *testing.T, databaseURL string) {
 		t.Parallel()
@@ -5152,6 +5232,12 @@ func subscribe(t *testing.T, s *Server, url string, rr *httptest.ResponseRecorde
 	}
 	time.Sleep(200 * time.Millisecond)
 	return cancelAndWaitForDone
+}
+
+func toTopics(t *testing.T, s string) []string {
+	var response apiTopicsResponse
+	require.Nil(t, json.NewDecoder(strings.NewReader(s)).Decode(&response))
+	return response.Topics
 }
 
 func toMessages(t *testing.T, s string) []*model.Message {

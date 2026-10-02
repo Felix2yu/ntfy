@@ -34,6 +34,8 @@ const (
 	sqliteSelectScheduledMessageIDsBySeqIDQuery = `SELECT mid FROM messages WHERE topic = ? AND sequence_id = ? AND published = 0`
 	sqliteDeleteScheduledBySequenceIDQuery      = `DELETE FROM messages WHERE topic = ? AND sequence_id = ? AND published = 0`
 	sqliteUpdateMessagesForTopicExpiryQuery     = `UPDATE messages SET expires = ? WHERE topic = ?`
+	sqliteSelectMessageIDsByTopicQuery          = `SELECT mid FROM messages WHERE topic = ?`
+	sqliteDeleteMessagesByTopicQuery            = `DELETE FROM messages WHERE topic = ?`
 	sqliteSelectMessagesByIDQuery               = `
 		SELECT mid, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user, content_type, encoding
 		FROM messages
@@ -97,6 +99,8 @@ var sqliteQueries = queries{
 	deleteScheduledBySequenceID:      sqliteDeleteScheduledBySequenceIDQuery,
 	updateMessagesForTopicExpiry:     sqliteUpdateMessagesForTopicExpiryQuery,
 	selectMessagesByID:               sqliteSelectMessagesByIDQuery,
+	selectMessageIDsByTopic:          sqliteSelectMessageIDsByTopicQuery,
+	deleteMessagesByTopic:            sqliteDeleteMessagesByTopicQuery,
 	selectMessagesSinceTime:          sqliteSelectMessagesSinceTimeQuery,
 	selectMessagesSinceTimeScheduled: sqliteSelectMessagesSinceTimeIncludeScheduledQuery,
 	selectMessagesSinceID:            sqliteSelectMessagesSinceIDQuery,

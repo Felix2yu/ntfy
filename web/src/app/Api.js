@@ -38,6 +38,23 @@ class Api {
     return data.topics || [];
   }
 
+  /**
+   * Permanently removes ("retires") a topic from the server: all cached messages (including
+   * attachments) are purged and the topic disappears from the /v1/topics list. This does not
+   * affect local subscriptions or any other persisted configuration. Requires write access
+   * to the topic (admins always pass). Returns the server response {topic, deleted_messages}.
+   */
+  async deleteTopic(baseUrl, topic) {
+    const user = await userManager.get(baseUrl);
+    const url = `${baseUrl}/v1/topics/${topic}`;
+    console.log(`[Api] Retiring topic ${url}`);
+    const response = await fetchOrThrow(url, {
+      method: "DELETE",
+      headers: maybeWithAuth({}, user),
+    });
+    return response.json();
+  }
+
   async search(baseUrl, params) {
     const { q, topic, since, until, priority, limit } = params;
     const searchParams = new URLSearchParams();

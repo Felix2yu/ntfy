@@ -33,6 +33,8 @@ type queries struct {
 	deleteScheduledBySequenceID      string
 	updateMessagesForTopicExpiry     string
 	selectMessagesByID               string
+	selectMessageIDsByTopic          string
+	deleteMessagesByTopic            string
 	selectMessagesSinceTime          string
 	selectMessagesSinceTimeScheduled string
 	selectMessagesSinceID            string
@@ -360,6 +362,30 @@ func (c *Cache) SearchMessages(params SearchParams) ([]*model.Message, error) {
 		return nil, err
 	}
 	return readMessages(rows)
+}
+
+// DeleteMessagesForTopic permanently deletes all cached messages of the given topic (including
+// action messages such as delete/clear markers) and returns their message IDs, so attachments
+// can be cleaned up by the caller. After this, the topic no longer appears in Topics() until a
+// new message is published to it.
+func (c *Cache) DeleteMessagesForTopic(topic string) ([]string, error) {
+	c.maybeLock()
+	defer c.maybeUnlock()
+	return db.QueryTx(c.db, func(tx *sql.Tx) ([]string, error) {
+		rows, err := tx.Query(c.queries.selectMessageIDsByTopic, topic)
+		if err != nil {
+			return nil, err
+		}
+		ids, err := readStrings(rows)
+		if err != nil {
+			return nil, err
+		}
+		rows.Close() // Close rows before executing delete in same transaction
+		if _, err := tx.Exec(c.queries.deleteMessagesByTopic, topic); err != nil {
+			return nil, err
+		}
+		return ids, nil
+	})
 }
 
 // DeleteScheduledBySequenceID deletes unpublished (scheduled) messages with the given topic and sequence ID.

@@ -35,8 +35,10 @@ import LockOpen from "@mui/icons-material/LockOpen";
 import Notifications from "@mui/icons-material/Notifications";
 import NotificationsOff from "@mui/icons-material/NotificationsOff";
 import RemoveCircle from "@mui/icons-material/RemoveCircle";
+import DeleteOutline from "@mui/icons-material/DeleteOutlined";
 import Send from "@mui/icons-material/Send";
 import subscriptionManager from "../app/SubscriptionManager";
+import config from "../app/config";
 import DialogFooter from "./DialogFooter";
 import accountApi, { Role } from "../app/AccountApi";
 import session from "../app/Session";
@@ -47,6 +49,7 @@ import api from "../app/Api";
 import AccountContext from "./AccountContext";
 import { usePrefCache } from "./PrefCache";
 import { ReserveAddDialog, ReserveDeleteDialog, ReserveEditDialog } from "./ReserveDialogs";
+import TopicDeleteDialog from "./TopicDeleteDialog";
 import { UnauthorizedError } from "../app/errors";
 
 export const SubscriptionPopup = (props) => {
@@ -60,9 +63,15 @@ export const SubscriptionPopup = (props) => {
   const [reserveDeleteDialogOpen, setReserveDeleteDialogOpen] = useState(false);
   const [showPublishError, setShowPublishError] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [retireDialogOpen, setRetireDialogOpen] = useState(false);
   const { subscription } = props;
   const placement = props.placement ?? "left";
   const reservations = account?.reservations || [];
+  const serverTopics = props.serverTopics || [];
+  // A topic counts as a server topic if it's currently listed by /v1/topics, or if it was
+  // subscribed from the server topics list (origin === "server"); the latter covers topics that
+  // were already retired server-side but still exist as a local subscription.
+  const isServerTopic = serverTopics.includes(subscription.topic) || subscription.origin === "server";
 
   const showReservationAdd = config.enable_reservations && !subscription?.reservation && account?.stats.reservations_remaining > 0;
   const showReservationAddDisabled =
@@ -252,6 +261,14 @@ export const SubscriptionPopup = (props) => {
             {t("action_bar_mute_notifications")}
           </MenuItem>
         )}
+        {isServerTopic && (
+          <MenuItem onClick={() => setRetireDialogOpen(true)} sx={{ color: "warning.main" }}>
+            <ListItemIcon>
+              <DeleteOutline fontSize="small" />
+            </ListItemIcon>
+            {t("server_topic_retire_menu", "Retire from server…")}
+          </MenuItem>
+        )}
         <MenuItem onClick={handleUnsubscribe}>
           <ListItemIcon>
             <RemoveCircle fontSize="small" />
@@ -267,6 +284,15 @@ export const SubscriptionPopup = (props) => {
           message={t("message_bar_error_publishing")}
         />
         <ClearDialog open={clearDialogOpen} subscription={subscription} onClose={() => setClearDialogOpen(false)} />
+        {isServerTopic && (
+          <TopicDeleteDialog
+            open={retireDialogOpen}
+            topic={subscription.topic}
+            subscription={subscription}
+            onClose={() => setRetireDialogOpen(false)}
+            onDeleted={() => props.onServerTopicsRefresh?.()}
+          />
+        )}
         <DisplayNameDialog open={displayNameDialogOpen} subscription={subscription} onClose={() => setDisplayNameDialogOpen(false)} />
         {showReservationAdd && (
           <ReserveAddDialog

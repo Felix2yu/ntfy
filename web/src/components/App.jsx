@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Suspense, useContext, useEffect, useState, useMemo } from "react";
+import { Suspense, useCallback, useContext, useEffect, useState, useMemo } from "react";
 import { Box, Toolbar, CssBaseline, Backdrop, CircularProgress, useMediaQuery, ThemeProvider, createTheme } from "@mui/material";
 import { useLiveQuery } from "dexie-react-hooks";
 import { BrowserRouter, Outlet, Route, Routes, useParams } from "react-router-dom";
@@ -124,22 +124,22 @@ const Layout = () => {
   const users = useLiveQuery(() => userManager.all());
   const subscriptions = useLiveQuery(() => subscriptionManager.all());
   const [topics, setTopics] = useState([]);
-  
+
   // Load topics from server
-  useEffect(() => {
-    const loadTopics = async () => {
-      try {
-        const serverTopics = await api.topics(config.base_url);
-        setTopics(serverTopics);
-      } catch (e) {
-        console.error("[App] Failed to load topics:", e);
-      }
-    };
-    loadTopics();
-    // Refresh topics every 30 seconds
-    const interval = setInterval(loadTopics, 30000);
-    return () => clearInterval(interval);
+  const refreshTopics = useCallback(async () => {
+    try {
+      const serverTopics = await api.topics(config.base_url);
+      setTopics(serverTopics);
+    } catch (e) {
+      console.error("[App] Failed to load topics:", e);
+    }
   }, []);
+  useEffect(() => {
+    refreshTopics();
+    // Refresh topics every 30 seconds
+    const interval = setInterval(refreshTopics, 30000);
+    return () => clearInterval(interval);
+  }, [refreshTopics]);
   // Preloaded here so the All view (and single topics, via filter) have data on mount -- no empty
   // frame when switching.
   const allNotifications = useLiveQuery(() => subscriptionManager.getAllNotifications());
@@ -167,11 +167,12 @@ const Layout = () => {
   return (
     <PrefCacheProvider>
       <Box sx={{ display: "flex" }}>
-        <ActionBar selected={selected} topics={topics} searchDialogOpen={searchDialogOpen} onSearchDialogClose={() => setSearchDialogOpen(false)} onMobileDrawerToggle={() => setMobileDrawerOpen(!mobileDrawerOpen)} onSearchClick={() => setSearchDialogOpen(true)} />
+        <ActionBar selected={selected} topics={topics} onServerTopicsRefresh={refreshTopics} searchDialogOpen={searchDialogOpen} onSearchDialogClose={() => setSearchDialogOpen(false)} onMobileDrawerToggle={() => setMobileDrawerOpen(!mobileDrawerOpen)} onSearchClick={() => setSearchDialogOpen(true)} />
         <Navigation
           subscriptions={subscriptionsWithoutInternal}
           topics={topics}
           selectedSubscription={selected}
+          onServerTopicsRefresh={refreshTopics}
           mobileDrawerOpen={mobileDrawerOpen}
           onMobileDrawerToggle={() => setMobileDrawerOpen(!mobileDrawerOpen)}
           onPublishMessageClick={() => setSendDialogOpenMode(PublishDialog.OPEN_MODE_DEFAULT)}

@@ -4,6 +4,7 @@ import {
   Badge,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Divider,
   Drawer,
@@ -29,6 +30,7 @@ import AddIcon from "@mui/icons-material/Add";
 import { useLocation, useNavigate } from "react-router-dom";
 import ChatBubble from "@mui/icons-material/ChatBubble";
 import MoreVert from "@mui/icons-material/MoreVert";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import NotificationsOffOutlined from "@mui/icons-material/NotificationsOffOutlined";
 import Send from "@mui/icons-material/Send";
 import ArticleIcon from "@mui/icons-material/Article";
@@ -47,6 +49,7 @@ import UpgradeDialog from "./UpgradeDialog";
 import AccountContext from "./AccountContext";
 import { PermissionDenyAll, PermissionRead, PermissionReadWrite, PermissionWrite } from "./ReserveIcons";
 import { SubscriptionPopup } from "./SubscriptionPopup";
+import TopicDeleteDialog from "./TopicDeleteDialog";
 import { useNotificationPermissionListener, useVersionChangeListener } from "./hooks";
 
 const navWidth = 280;
@@ -166,7 +169,12 @@ const NavList = (props) => {
               </ListItemIcon>
               <ListItemText primary={t("nav_button_all_notifications")} />
             </ListItemButton>
-            <SubscriptionList subscriptions={props.subscriptions} selectedSubscription={props.selectedSubscription} />
+            <SubscriptionList
+              subscriptions={props.subscriptions}
+              selectedSubscription={props.selectedSubscription}
+              serverTopics={topics}
+              onServerTopicsRefresh={props.onServerTopicsRefresh}
+            />
             <Divider sx={{ my: 1 }} />
           </>
         )}
@@ -177,6 +185,7 @@ const NavList = (props) => {
               topics={topics}
               subscriptions={props.subscriptions || []}
               selectedTopic={location.pathname.split('/').pop()}
+              onServerTopicsRefresh={props.onServerTopicsRefresh}
             />
             <Divider sx={{ my: 1 }} />
           </>
@@ -297,6 +306,8 @@ const SubscriptionList = (props) => {
           key={subscription.id}
           subscription={subscription}
           selected={props.selectedSubscription && props.selectedSubscription.id === subscription.id}
+          serverTopics={props.serverTopics || []}
+          onServerTopicsRefresh={props.onServerTopicsRefresh}
         />
       ))}
     </>
@@ -306,11 +317,13 @@ const SubscriptionList = (props) => {
 const TopicList = (props) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [deleteTopic, setDeleteTopic] = useState(null);
 
   const handleTopicClick = async (topic) => {
     const baseUrl = config.base_url;
-    // Create subscription if it doesn't exist
-    await subscriptionManager.upsert(baseUrl, topic);
+    // Create subscription if it doesn't exist; mark its origin so the UI can show a
+    // "deprecated" state once the topic is retired server-side
+    await subscriptionManager.upsert(baseUrl, topic, { origin: "server" });
     navigate(routes.forTopic(topic));
   };
 
@@ -331,9 +344,35 @@ const TopicList = (props) => {
           <ListItemIcon>
             <ChatBubbleOutlineIcon />
           </ListItemIcon>
-          <ListItemText primary={topic} />
+          <ListItemText
+            primary={topic}
+            primaryTypographyProps={{
+              style: { overflow: "hidden", textOverflow: "ellipsis" },
+            }}
+          />
+          <ListItemIcon edge="end" sx={{ minWidth: "32px" }}>
+            <Tooltip title={t("server_topic_retire_action", "Retire from server")}>
+              <IconButton
+                size="small"
+                aria-label={t("server_topic_retire_action", "Retire from server")}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteTopic(topic);
+                }}
+              >
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </ListItemIcon>
         </ListItemButton>
       ))}
+      <TopicDeleteDialog
+        open={!!deleteTopic}
+        topic={deleteTopic}
+        onClose={() => setDeleteTopic(null)}
+        onDeleted={() => props.onServerTopicsRefresh?.()}
+      />
     </>
   );
 };
@@ -346,6 +385,9 @@ const SubscriptionItem = (props) => {
   const { subscription } = props;
   const iconBadge = subscription.new <= 99 ? subscription.new : "99+";
   const displayName = topicDisplayName(subscription);
+  const serverTopics = props.serverTopics || [];
+  const isServerTopic = serverTopics.includes(subscription.topic) || subscription.origin === "server";
+  const deprecated = subscription.origin === "server" && !serverTopics.includes(subscription.topic);
   const ariaLabel = subscription.state === ConnectionState.Connecting ? `${displayName} (${t("nav_button_connecting")})` : displayName;
   const icon =
     subscription.state === ConnectionState.Connecting ? (
@@ -374,6 +416,24 @@ const SubscriptionItem = (props) => {
             style: { overflow: "hidden", textOverflow: "ellipsis" },
           }}
         />
+        {deprecated && (
+          <ListItemIcon edge="end" sx={{ minWidth: "26px" }}>
+            <Tooltip title={t("subscription_deprecated_tooltip", "This topic was retired on the server")}>
+              <Chip size="small" color="warning" label={t("subscription_deprecated", "Retired")} sx={{ height: "20px", fontSize: "11px" }} />
+            </Tooltip>
+          </ListItemIcon>
+        )}
+        {!deprecated && isServerTopic && (
+          <ListItemIcon edge="end" sx={{ minWidth: "26px" }}>
+            <Tooltip title={t("subscription_origin_server_tooltip", "Topic exists on the server")}>
+              <Chip
+                size="small"
+                label={t("subscription_origin_server", "Server")}
+                sx={{ height: "20px", fontSize: "11px", opacity: 0.75 }}
+              />
+            </Tooltip>
+          </ListItemIcon>
+        )}
         {subscription.reservation?.everyone && (
           <ListItemIcon edge="end" sx={{ minWidth: "26px" }}>
             {subscription.reservation?.everyone === Permission.READ_WRITE && (
@@ -419,7 +479,13 @@ const SubscriptionItem = (props) => {
         </ListItemIcon>
       </ListItemButton>
       <Portal>
-        <SubscriptionPopup subscription={subscription} anchor={menuAnchorEl} onClose={() => setMenuAnchorEl(null)} />
+        <SubscriptionPopup
+          subscription={subscription}
+          anchor={menuAnchorEl}
+          onClose={() => setMenuAnchorEl(null)}
+          serverTopics={serverTopics}
+          onServerTopicsRefresh={props.onServerTopicsRefresh}
+        />
       </Portal>
     </>
   );

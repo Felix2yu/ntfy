@@ -58,7 +58,7 @@ const SubscribeDialog = (props) => {
   const handleSuccess = async () => {
     console.log(`[SubscribeDialog] Subscribing to topic ${topic}`);
     const actualBaseUrl = baseUrl || config.base_url;
-    const subscription = await subscribeTopic(actualBaseUrl, topic, {});
+    const subscription = await subscribeTopic(actualBaseUrl, topic, { origin: "local" });
     poller.pollInBackground(subscription); // Dangle!
     props.onSuccess(subscription);
   };

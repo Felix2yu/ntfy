@@ -768,7 +768,7 @@ const ReservationsTable = (props) => {
   };
 
   const handleSubscribeClick = async (reservation) => {
-    await subscribeTopic(config.base_url, reservation.topic, {});
+    await subscribeTopic(config.base_url, reservation.topic, { origin: "local" });
   };
 
   return (

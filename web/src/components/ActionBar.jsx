@@ -102,7 +102,7 @@ const ActionBar = (props) => {
           <SearchIcon />
         </IconButton>
         {props.selected && <HistoryButtons subscription={props.selected} />}
-        {props.selected && <SettingsIcons subscription={props.selected} onUnsubscribe={props.onUnsubscribe} />}
+        {props.selected && <SettingsIcons subscription={props.selected} onUnsubscribe={props.onUnsubscribe} serverTopics={props.topics} onServerTopicsRefresh={props.onServerTopicsRefresh} />}
         <ProfileIcon />
       </Toolbar>
       <SearchDialog open={!!props.searchDialogOpen} onClose={() => props.onSearchDialogClose?.()} topics={props.topics} selected={props.selected} />
@@ -134,7 +134,14 @@ const SettingsIcons = (props) => {
       >
         <MoreVertIcon />
       </IconButton>
-      <SubscriptionPopup subscription={subscription} anchor={anchorEl} placement="right" onClose={() => setAnchorEl(null)} />
+      <SubscriptionPopup
+        subscription={subscription}
+        anchor={anchorEl}
+        placement="right"
+        onClose={() => setAnchorEl(null)}
+        serverTopics={props.serverTopics}
+        onServerTopicsRefresh={props.onServerTopicsRefresh}
+      />
     </>
   );
 };

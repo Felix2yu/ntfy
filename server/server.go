@@ -662,6 +662,8 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request, v *visit
 		return s.handleStats(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == apiTopicsPath {
 		return s.handleTopics(w, r, v)
+	} else if r.Method == http.MethodDelete && apiTopicDeleteRegex.MatchString(r.URL.Path) {
+		return s.limitRequests(s.authorizeTopicDelete(s.handleTopicDelete))(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == apiSearchPath {
 		return s.handleSearch(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == apiTiersPath {
@@ -761,6 +763,11 @@ type apiTopicsResponse struct {
 	Topics []string `json:"topics"`
 }
 
+// apiTopicDeleteRegex matches DELETE /v1/topics/{topic}: permanently removes ("retires") a topic
+// from the server by purging all of its cached messages, so it also disappears from the
+// GET /v1/topics list. See handleTopicDelete.
+var apiTopicDeleteRegex = regexp.MustCompile(`^/v1/topics/([-_A-Za-z0-9]{1,64})$`)
+
 // handleTopics returns the list of all topics with cached messages
 func (s *Server) handleTopics(w http.ResponseWriter, _ *http.Request, _ *visitor) error {
 	topics, err := s.messageCache.Topics()
@@ -771,6 +778,36 @@ func (s *Server) handleTopics(w http.ResponseWriter, _ *http.Request, _ *visitor
 		Topics: topics,
 	}
 	return s.writeJSON(w, response)
+}
+
+// apiTopicDeleteResponse is the response for the DELETE /v1/topics/{topic} API
+type apiTopicDeleteResponse struct {
+	Topic           string `json:"topic"`
+	DeletedMessages int    `json:"deleted_messages"`
+}
+
+// handleTopicDelete permanently removes ("retires") a topic from the server: all cached messages
+// of the topic (including action messages) are purged and their attachments removed, so the topic
+// disappears from the /v1/topics list and is no longer fetched or displayed by clients. This does
+// not touch any persisted configuration (user accounts, subscriptions, preferences); it only
+// clears the message cache entry. If the topic receives a new message later, it will show up in
+// the list again.
+func (s *Server) handleTopicDelete(w http.ResponseWriter, r *http.Request, v *visitor) error {
+	topicID := apiTopicDeleteRegex.FindStringSubmatch(r.URL.Path)[1]
+	deletedIDs, err := s.messageCache.DeleteMessagesForTopic(topicID)
+	if err != nil {
+		return err
+	}
+	if s.attachment != nil && len(deletedIDs) > 0 {
+		if err := s.attachment.Remove(deletedIDs...); err != nil {
+			logvr(v, r).Field("topic", topicID).Err(err).Warn("Error removing attachments for deleted topic")
+		}
+	}
+	logvr(v, r).Field("topic", topicID).Info("Topic retired: purged %d message(s)", len(deletedIDs))
+	return s.writeJSON(w, &apiTopicDeleteResponse{
+		Topic:           topicID,
+		DeletedMessages: len(deletedIDs),
+	})
 }
 
 // apiSearchResponse is the response for the /v1/search API

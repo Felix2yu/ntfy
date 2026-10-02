@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
 	"heckel.io/ntfy/v2/user"
 	"heckel.io/ntfy/v2/util"
@@ -144,6 +145,32 @@ func (s *Server) withAccountSync(next handleFunc) handleFunc {
 
 func (s *Server) authorizeTopicWrite(next handleFunc) handleFunc {
 	return s.authorizeTopic(next, user.PermissionWrite)
+}
+
+// authorizeTopicDelete authorizes topic-scoped destructive operations on the /v1/topics/{topic}
+// path shape, where the topic is the third path segment (unlike the /{topic} shape that
+// authorizeTopic handles via topicsFromPath). Semantics mirror authorizeTopic with write
+// permission: without a user manager (auth disabled) the request is allowed, and with auth
+// enabled the visitor needs write access to the topic (admins always pass).
+func (s *Server) authorizeTopicDelete(next handleFunc) handleFunc {
+	return func(w http.ResponseWriter, r *http.Request, v *visitor) error {
+		if s.userManager == nil {
+			return next(w, r, v)
+		}
+		parts := strings.Split(r.URL.Path, "/")
+		if len(parts) < 4 || !topicRegex.MatchString(parts[3]) {
+			return errHTTPBadRequestTopicInvalid
+		}
+		topics, err := s.topicsFromIDs(v, parts[3])
+		if err != nil {
+			return err
+		}
+		if err := s.userManager.Authorize(v.User(), topics[0].ID, user.PermissionWrite); err != nil {
+			logvr(v, r).With(topics[0]).Err(err).Debug("Access to topic %s not authorized", topics[0].ID)
+			return errHTTPForbidden.With(topics[0])
+		}
+		return next(w, r, v)
+	}
 }
 
 func (s *Server) authorizeTopicRead(next handleFunc) handleFunc {
