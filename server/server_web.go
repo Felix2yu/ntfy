@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"heckel.io/ntfy/v2/util"
 )
@@ -72,6 +73,12 @@ func (s *Server) handleWebManifest(w http.ResponseWriter, _ *http.Request, _ *vi
 // handleStatic returns all static resources (excluding the docs), including the web app
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request, _ *visitor) error {
 	r.URL.Path = webSiteDir + r.URL.Path
+	// Translation files must always be revalidated: they are fetched with a cache-buster tied to
+	// the server config hash (see web/src/app/i18n.js), which does not change when only the web
+	// app is rebuilt. Without this header, a rebuilt binary could serve stale translations.
+	if strings.HasPrefix(r.URL.Path, webSiteDir+"/static/langs/") {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	util.Gzip(http.FileServer(http.FS(webFsCached))).ServeHTTP(w, r)
 	return nil
 }

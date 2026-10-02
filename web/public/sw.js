@@ -505,9 +505,23 @@ if (!import.meta.env.DEV) {
     }),
   );
 
+  // Translation files must always come from the network first: the i18n loadPath cache-buster
+  // (?v=config_hash) only changes when the *server* config changes, not when the web app is
+  // rebuilt, so a StaleWhileRevalidate route would keep serving stale translations (missing
+  // keys render as raw i18n keys in the UI). Falls back to the cache when offline.
+  registerRoute(
+    ({ url }) => url.pathname.startsWith("/static/langs/"),
+    new NetworkFirst({
+      cacheName: "ntfy-langs",
+      plugins: [
+        new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 7 * 24 * 60 * 60 }), // 7 days
+      ],
+    }),
+  );
+
   // Cache static CSS/JS with StaleWhileRevalidate for fast loads
   registerRoute(
-    ({ url }) => url.pathname.startsWith("/static/"),
+    ({ url }) => url.pathname.startsWith("/static/") && !url.pathname.startsWith("/static/langs/"),
     new StaleWhileRevalidate({
       cacheName: "ntfy-static",
       plugins: [
