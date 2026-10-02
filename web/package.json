@@ -1,6 +1,6 @@
 {
   "name": "ntfy",
-  "packageManager": "pnpm@12.8.1",
+  "packageManager": "pnpm@11.28.3",
   "version": "1.0.0",
   "private": true,
   "scripts": {

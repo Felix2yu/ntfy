@@ -4,10 +4,10 @@
 
 ## 包管理器（强制）
 
-本项目前端统一使用 **pnpm 12.8.1**，不使用 npm / yarn：
+本项目前端统一使用 **pnpm 11.28.3**，不使用 npm / yarn：
 
-- `web/package.json` 已声明 `"packageManager": "pnpm@12.8.1"`，锁文件为 `web/pnpm-lock.yaml`
-- CI（`.github/workflows/docker.yaml`）与 Docker 构建（`Dockerfile-build`）同样锁定 `pnpm@12.8.1`
+- `web/package.json` 已声明 `"packageManager": "pnpm@11.28.3"`，锁文件为 `web/pnpm-lock.yaml`
+- CI（`.github/workflows/docker.yaml`）与 Docker 构建（`Dockerfile-build`）同样锁定 `pnpm@11.28.3`
 - 安装依赖：`pnpm install`
 - 添加 / 移除依赖：`pnpm add <pkg>` / `pnpm remove <pkg>`
 - 运行脚本：`pnpm run <script>`
