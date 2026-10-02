@@ -386,7 +386,8 @@ const SubscriptionItem = (props) => {
   const iconBadge = subscription.new <= 99 ? subscription.new : "99+";
   const displayName = topicDisplayName(subscription);
   const serverTopics = props.serverTopics || [];
-  const isServerTopic = serverTopics.includes(subscription.topic) || subscription.origin === "server";
+  // A "Retired" badge is only shown for topics that were subscribed from the server topics list
+  // (origin === "server") but no longer appear in /v1/topics; regular server topics get no badge.
   const deprecated = subscription.origin === "server" && !serverTopics.includes(subscription.topic);
   const ariaLabel = subscription.state === ConnectionState.Connecting ? `${displayName} (${t("nav_button_connecting")})` : displayName;
   const icon =
@@ -420,17 +421,6 @@ const SubscriptionItem = (props) => {
           <ListItemIcon edge="end" sx={{ minWidth: "26px" }}>
             <Tooltip title={t("subscription_deprecated_tooltip", "This topic was retired on the server")}>
               <Chip size="small" color="warning" label={t("subscription_deprecated", "Retired")} sx={{ height: "20px", fontSize: "11px" }} />
-            </Tooltip>
-          </ListItemIcon>
-        )}
-        {!deprecated && isServerTopic && (
-          <ListItemIcon edge="end" sx={{ minWidth: "26px" }}>
-            <Tooltip title={t("subscription_origin_server_tooltip", "Topic exists on the server")}>
-              <Chip
-                size="small"
-                label={t("subscription_origin_server", "Server")}
-                sx={{ height: "20px", fontSize: "11px", opacity: 0.75 }}
-              />
             </Tooltip>
           </ListItemIcon>
         )}

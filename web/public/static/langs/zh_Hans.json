@@ -482,8 +482,6 @@
   "server_topic_delete_confirm": "下架",
   "server_topic_delete_done": "已下架，共删除 {{count}} 条服务端消息",
   "server_topic_delete_failed": "下架失败",
-  "subscription_origin_server": "服务端",
-  "subscription_origin_server_tooltip": "该主题来自服务端主题列表",
   "subscription_deprecated": "已下架",
   "subscription_deprecated_tooltip": "该主题已在服务端下架，不再接收新消息",
   "nav_button_search": "搜索",

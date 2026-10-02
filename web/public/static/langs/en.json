@@ -489,8 +489,6 @@
   "server_topic_delete_confirm": "Retire",
   "server_topic_delete_done": "Topic retired, {{count}} server message(s) deleted",
   "server_topic_delete_failed": "Failed to retire topic",
-  "subscription_origin_server": "Server",
-  "subscription_origin_server_tooltip": "Topic exists on the server",
   "subscription_deprecated": "Retired",
   "subscription_deprecated_tooltip": "This topic was retired on the server and no longer receives messages",
   "nav_button_search": "Search",
