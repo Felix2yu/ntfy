@@ -120,6 +120,7 @@ var flagsServe = append(
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "web-push-startup-queries", Aliases: []string{"web_push_startup_queries"}, EnvVars: []string{"NTFY_WEB_PUSH_STARTUP_QUERIES"}, Usage: "queries run when the web push database is initialized"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "web-push-expiry-duration", Aliases: []string{"web_push_expiry_duration"}, EnvVars: []string{"NTFY_WEB_PUSH_EXPIRY_DURATION"}, Value: util.FormatDuration(server.DefaultWebPushExpiryDuration), Usage: "automatically expire unused subscriptions after this time"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "web-push-expiry-warning-duration", Aliases: []string{"web_push_expiry_warning_duration"}, EnvVars: []string{"NTFY_WEB_PUSH_EXPIRY_WARNING_DURATION"}, Value: util.FormatDuration(server.DefaultWebPushExpiryWarningDuration), Usage: "send web push warning notification after this time before expiring unused subscriptions"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "web-push-ttl", Aliases: []string{"web_push_ttl"}, EnvVars: []string{"NTFY_WEB_PUSH_TTL"}, Value: util.FormatDuration(server.DefaultWebPushTTL), Usage: "time a push service keeps a web push message for an unreachable device; 0 falls back to cache-duration, then 4 weeks"}),
 )
 
 var cmdServe = &cli.Command{
@@ -164,6 +165,7 @@ func execServe(c *cli.Context) error {
 	webPushStartupQueries := c.String("web-push-startup-queries")
 	webPushExpiryDurationStr := c.String("web-push-expiry-duration")
 	webPushExpiryWarningDurationStr := c.String("web-push-expiry-warning-duration")
+	webPushTTLStr := c.String("web-push-ttl")
 	cacheFile := c.String("cache-file")
 	cacheDurationStr := c.String("cache-duration")
 	cacheStartupQueries := c.String("cache-startup-queries")
@@ -279,6 +281,10 @@ func execServe(c *cli.Context) error {
 	webPushExpiryWarningDuration, err := util.ParseDuration(webPushExpiryWarningDurationStr)
 	if err != nil {
 		return fmt.Errorf("invalid web push expiry warning duration: %s", webPushExpiryWarningDurationStr)
+	}
+	webPushTTL, err := util.ParseDuration(webPushTTLStr)
+	if err != nil {
+		return fmt.Errorf("invalid web push TTL: %s", webPushTTLStr)
 	}
 	banWindow, err := util.ParseDuration(banWindowStr)
 	if err != nil {
@@ -566,6 +572,7 @@ func execServe(c *cli.Context) error {
 	conf.WebPushStartupQueries = webPushStartupQueries
 	conf.WebPushExpiryDuration = webPushExpiryDuration
 	conf.WebPushExpiryWarningDuration = webPushExpiryWarningDuration
+	conf.WebPushTTL = webPushTTL
 	conf.BuildVersion = c.App.Version
 	conf.BuildDate = maybeFromMetadata(c.App.Metadata, MetadataKeyDate)
 	conf.BuildCommit = maybeFromMetadata(c.App.Metadata, MetadataKeyCommit)

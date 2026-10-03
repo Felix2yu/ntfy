@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import subscriptionManager from "../app/SubscriptionManager";
 import { disallowedTopic, expandSecureUrl, topicUrl } from "../app/utils";
@@ -156,6 +156,14 @@ export const useAutoSubscribe = (subscriptions, selected) => {
 };
 
 const webPushBroadcastChannel = new BroadcastChannel("web-push-broadcast");
+const webPushControlChannel = new BroadcastChannel("web-push-control");
+
+// iOS/Safari does not implement Periodic Background Sync (see usePeriodicTokenExtend below), so an
+// installed PWA that is not opened for a long time never re-registers its subscription and the
+// server eventually prunes it. Re-registering while the app is in the foreground is the only
+// client-side fallback we have.
+const WEB_PUSH_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+let lastWebPushSyncAt = 0;
 
 /**
  * Hook to return a value that's refreshed when the notification permission changes
@@ -191,22 +199,60 @@ const useWebPushListener = (topics) => {
   const [prevUpdate, setPrevUpdate] = useState();
   const pushPossible = useNotificationPermissionListener(() => notifier.pushPossible());
 
+  // Idempotent: the endpoint is the primary key server-side, so re-POSTing is an upsert.
+  const syncWebPush = useCallback(async () => {
+    if (topics === undefined || !notifier.pushPossible()) {
+      return;
+    }
+    try {
+      console.log("[useWebPushListener] Refreshing web push subscriptions", topics);
+      await subscriptionManager.updateWebPushSubscriptions(topics);
+      lastWebPushSyncAt = Date.now();
+    } catch (e) {
+      console.error("[useWebPushListener] Error refreshing web push subscriptions", e);
+    }
+  }, [topics]);
+
   useEffect(() => {
     const nextUpdate = JSON.stringify({ topics, pushPossible });
     if (topics === undefined || nextUpdate === prevUpdate) {
       return;
     }
 
-    (async () => {
-      try {
-        console.log("[useWebPushListener] Refreshing web push subscriptions", topics);
-        await subscriptionManager.updateWebPushSubscriptions(topics);
-        setPrevUpdate(nextUpdate);
-      } catch (e) {
-        console.error("[useWebPushListener] Error refreshing web push subscriptions", e);
+    syncWebPush().then(() => setPrevUpdate(nextUpdate));
+  }, [topics, pushPossible, prevUpdate, syncWebPush]);
+
+  // Periodic re-registration + re-registration when the app comes back to the foreground. iOS
+  // freezes (and eventually discards) a backgrounded PWA, so timers stop firing; the
+  // visibilitychange handler catches the first moment we are usable again.
+  useEffect(() => {
+    if (topics === undefined) {
+      return undefined;
+    }
+    const interval = setInterval(syncWebPush, WEB_PUSH_REFRESH_INTERVAL_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        return;
       }
-    })();
-  }, [topics, pushPossible, prevUpdate]);
+      if (Date.now() - lastWebPushSyncAt < WEB_PUSH_REFRESH_INTERVAL_MS) {
+        return;
+      }
+      syncWebPush();
+    };
+    // The service worker re-subscribed on its own (pushsubscriptionchange); make sure the server
+    // has our current topic list for the new endpoint.
+    const handleSubscriptionChange = () => {
+      console.log("[useWebPushListener] Service worker re-subscribed, refreshing web push subscriptions");
+      syncWebPush();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    webPushControlChannel.addEventListener("message", handleSubscriptionChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      webPushControlChannel.removeEventListener("message", handleSubscriptionChange);
+    };
+  }, [syncWebPush]);
 
   useEffect(() => {
     const onMessage = () => {

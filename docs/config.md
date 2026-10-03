@@ -1654,6 +1654,15 @@ a database to keep track of the browser's subscriptions, and an admin email addr
 - `web-push-startup-queries` is an optional list of queries to run on startup`
 - `web-push-expiry-warning-duration` defines the duration after which unused subscriptions are sent a warning (default is `55d`)
 - `web-push-expiry-duration` defines the duration after which unused subscriptions will expire (default is `60d`)
+- `web-push-ttl` defines how long the push service holds on to a message for a device that cannot be
+  reached right now (default is `28d`). If it is `0`, ntfy falls back to `cache-duration`, and if that
+  is `0` as well, to `28d`. A TTL of `0` drops the message as soon as the device is offline, which is
+  fatal for iOS, where an installed PWA is regularly suspended. 4 weeks is the longest WebKit/APNs
+  will hold a message.
+
+Note that a subscription is considered "in use" as soon as a message is **successfully delivered** to
+it: the delivery itself refreshes the subscription, so an installed PWA that is never opened again
+keeps receiving notifications. Only subscriptions that cannot be reached at all are expired.
 
 Alternatively, you can use PostgreSQL instead of SQLite by setting `database-url`
 (see [PostgreSQL database](#postgresql)).
@@ -2416,6 +2425,7 @@ variable before running the `ntfy` command (e.g. `export NTFY_LISTEN_HTTP=:80`).
 | `web-push-startup-queries`                 | `NTFY_WEB_PUSH_STARTUP_QUERIES`                 | *string*                                            | -                 | Web Push: SQL queries to run against subscription database at startup                                                                                                                                                                   |
 | `web-push-expiry-duration`                 | `NTFY_WEB_PUSH_EXPIRY_DURATION`                 | *duration*                                          | 60d               | Web Push: Duration after which a subscription is considered stale and will be deleted. This is to prevent stale subscriptions.                                                                                                          |
 | `web-push-expiry-warning-duration`         | `NTFY_WEB_PUSH_EXPIRY_WARNING_DURATION`         | *duration*                                          | 55d               | Web Push: Duration after which a warning is sent to subscribers that their subscription will expire soon. This is to prevent stale subscriptions.                                                                                       |
+| `web-push-ttl`                             | `NTFY_WEB_PUSH_TTL`                             | *duration*                                          | 28d               | Web Push: How long the push service keeps a message for an unreachable device. `0` falls back to `cache-duration`, then to 28d.                                                                                                          |
 | `log-format`                               | `NTFY_LOG_FORMAT`                               | *string*                                            | `text`            | Defines the output format, can be text or json                                                                                                                                                                                          |
 | `log-file`                                 | `NTFY_LOG_FILE`                                 | *string*                                            | -                 | Defines the filename to write logs to. If this is not set, ntfy logs to stderr                                                                                                                                                          |
 | `log-level`                                | `NTFY_LOG_LEVEL`                                | *string*                                            | `info`            | Defines the default log level, can be one of trace, debug, info, warn or error                                                                                                                                                          |

@@ -444,6 +444,12 @@ func TestPayments_Webhook_Subscription_Updated_Downgrade_From_PastDue_To_Active(
 		c := newTestConfigWithAuthFile(t, databaseURL)
 		c.StripeSecretKey = "secret key"
 		c.StripeWebhookKey = "webhook key"
+		// 降级会删除超额的 reservation 及其消息/附件，本用例末尾断言这些消息确实消失。
+		// 清理走 execManager → pruneMessages，而它在 CacheDuration==0 时直接 return
+		// （"Infinite retention, no messages to prune"）。本仓库 DefaultCacheDuration
+		// 已改成 0（永不过期，见 563c9de2），故必须显式给非零值，否则清理段不会执行。
+		// 同文件另一同类用例也是这么设的。
+		c.CacheDuration = 13 * time.Hour
 		s := newTestServer(t, c)
 		s.stripe = stripeMock
 

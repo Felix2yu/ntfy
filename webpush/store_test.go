@@ -352,6 +352,41 @@ func TestStoreExpiring(t *testing.T) {
 	})
 }
 
+// A subscription that keeps receiving push messages must never be pruned, even if the client
+// never re-registers it (which is the normal case for an iOS PWA that is not opened for weeks).
+func TestStoreTouchSubscriptions(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, store *webpush.Store) {
+		require.Nil(t, store.UpsertSubscription(testWebPushEndpoint, "auth-key", "p256dh-key", "u_1234", netip.MustParseAddr("1.2.3.4"), []string{"topic1"}))
+
+		// Fake-mark the subscription as nearly expired, as an untouched iOS subscription would be
+		require.Nil(t, store.SetSubscriptionUpdatedAt(testWebPushEndpoint, time.Now().Add(-50*24*time.Hour).Unix()))
+		subs, err := store.SubscriptionsExpiring(45 * 24 * time.Hour)
+		require.Nil(t, err)
+		require.Len(t, subs, 1)
+
+		// A successful delivery refreshes it ...
+		require.Nil(t, store.TouchSubscriptions([]string{testWebPushEndpoint}))
+
+		subs, err = store.SubscriptionsExpiring(45 * 24 * time.Hour)
+		require.Nil(t, err)
+		require.Len(t, subs, 0)
+
+		// ... and therefore keeps it alive through the pruning pass.
+		require.Nil(t, store.RemoveExpiredSubscriptions(60 * 24 * time.Hour))
+		subs, err = store.SubscriptionsForTopic("topic1")
+		require.Nil(t, err)
+		require.Len(t, subs, 1)
+	})
+}
+
+func TestStoreTouchSubscriptions_EmptyAndUnknown(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, store *webpush.Store) {
+		// Must be a no-op rather than an error, otherwise every publish would log a failure
+		require.Nil(t, store.TouchSubscriptions(nil))
+		require.Nil(t, store.TouchSubscriptions([]string{"https://web.push.apple.com/does-not-exist"}))
+	})
+}
+
 func TestStoreRemoveExpired(t *testing.T) {
 	forEachBackend(t, func(t *testing.T, store *webpush.Store) {
 		// Insert subscription with two topics

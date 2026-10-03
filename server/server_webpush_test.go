@@ -317,6 +317,80 @@ func TestServer_WebPush_Publish_RemoveOnError(t *testing.T) {
 	})
 }
 
+// A client that never re-registers (iOS PWA, no Periodic Background Sync) must stay subscribed as
+// long as push delivery works, otherwise notifications silently stop after WebPushExpiryDuration.
+func TestServer_WebPush_Publish_RefreshesSubscription(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, databaseURL string) {
+		s := newTestServer(t, newTestConfigWithWebPush(t, databaseURL))
+
+		var received atomic.Bool
+		pushService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, err := io.ReadAll(r.Body)
+			require.Nil(t, err)
+			w.WriteHeader(http.StatusOK)
+			received.Store(true)
+		}))
+		defer pushService.Close()
+
+		endpoint := pushService.URL + "/push-receive"
+		addSubscription(t, s, endpoint, "test-topic")
+
+		// Simulate an iOS PWA that has not been opened for 50 days
+		require.Nil(t, s.webPush.SetSubscriptionUpdatedAt(endpoint, time.Now().Add(-50*24*time.Hour).Unix()))
+		expiring, err := s.webPush.SubscriptionsExpiring(45 * 24 * time.Hour)
+		require.Nil(t, err)
+		require.Len(t, expiring, 1)
+
+		request(t, s, "POST", "/test-topic", "web push test", nil)
+		waitFor(t, func() bool { return received.Load() })
+
+		// Successful delivery is proof of life, so the subscription must no longer be expiring
+		waitFor(t, func() bool {
+			subs, err := s.webPush.SubscriptionsExpiring(45 * 24 * time.Hour)
+			require.Nil(t, err)
+			return len(subs) == 0
+		})
+		requireSubscriptionCount(t, s, "test-topic", 1)
+	})
+}
+
+// Transient push service failures (5xx, rate limiting) must not delete the subscription: there is
+// no way to rebuild it without the client re-opening the app.
+func TestServer_WebPush_Publish_KeepsSubscriptionOnTransientError(t *testing.T) {
+	for _, statusCode := range []int{http.StatusInternalServerError, http.StatusServiceUnavailable, http.StatusTooManyRequests} {
+		t.Run(fmt.Sprintf("HTTP_%d", statusCode), func(t *testing.T) {
+			forEachBackend(t, func(t *testing.T, databaseURL string) {
+				s := newTestServer(t, newTestConfigWithWebPush(t, databaseURL))
+
+				var received atomic.Bool
+				pushService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_, err := io.ReadAll(r.Body)
+					require.Nil(t, err)
+					w.WriteHeader(statusCode)
+					received.Store(true)
+				}))
+				defer pushService.Close()
+
+				addSubscription(t, s, pushService.URL+"/push-receive", "test-topic")
+				requireSubscriptionCount(t, s, "test-topic", 1)
+
+				request(t, s, "POST", "/test-topic", "web push test", nil)
+
+				waitFor(t, func() bool { return received.Load() })
+				// Give the (async) publish goroutine a chance to wrongly delete the subscription
+				time.Sleep(250 * time.Millisecond)
+				requireSubscriptionCount(t, s, "test-topic", 1)
+			})
+		})
+	}
+}
+
+func TestServer_WebPush_TTL(t *testing.T) {
+	require.Equal(t, 28*24*60*60, (&Server{config: &Config{}}).webPushTTLSeconds())
+	require.Equal(t, 3600, (&Server{config: &Config{CacheDuration: time.Hour}}).webPushTTLSeconds())
+	require.Equal(t, 60, (&Server{config: &Config{WebPushTTL: time.Minute, CacheDuration: time.Hour}}).webPushTTLSeconds())
+}
+
 func TestServer_WebPush_Expiry(t *testing.T) {
 	forEachBackend(t, func(t *testing.T, databaseURL string) {
 		s := newTestServer(t, newTestConfigWithWebPush(t, databaseURL))

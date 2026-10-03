@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    uses: Felix2yu/.github/.github/workflows/reusable-test.yml@v1
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    with:
+      go-dir: .
+      test-packages: ./...
+      test-flags: -race -covermode=atomic
+      test-cgo: '1'
+      # go-sqlite3 需要这三个 tag，否则 sqlite 扩展与静态链接行为不同
+      build-tags: sqlite_omit_load_extension osusergo netgo
+      web-dir: web
+      # server/embed 依赖两个 npm 之外的前置产物：mkdocs 文档站
+      docs-command: |
+        "$PYTHON" -m venv .venv-docs
+        .venv-docs/bin/pip install --disable-pip-version-check -q -r requirements.txt
+        .venv-docs/bin/mkdocs build
+      docs-cache-path: ~/.cache/pip
+      # 前端产物落到 server/site：server/server.go 用 //go:embed site
+      frontend-stage-command: |
+        mv web/build/index.html web/build/app.html
+        rm -rf server/site
+        mv web/build server/site
+        rm -f server/site/config.js
+
+  image:
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    uses: Felix2yu/.github/.github/workflows/reusable-image.yml@v1
+    with:
+      go-dir: .
+      binary-name: ntfy
+      image-name: ghcr.io/felix2yu/ntfy
+      # Dockerfile 是上游原有的「COPY ntfy /usr/bin」，二进制必须落仓库根。
+      # 保持 Dockerfile 不动，goreleaser 的 dockers 段（本地 make cli）继续可用。
+      prebuilt-dest: '.'
+      # CGO + 完全静态：go-sqlite3 必须要 cgo，而运行镜像是 alpine（musl），
+      # 动态链接的产物在那里启动即崩
+      cgo: static
+      build-tags: sqlite_omit_load_extension osusergo netgo
+      web-dir: web
+      docs-command: |
+        "$PYTHON" -m venv .venv-docs
+        .venv-docs/bin/pip install --disable-pip-version-check -q -r requirements.txt
+        .venv-docs/bin/mkdocs build
+      docs-cache-path: ~/.cache/pip
+      frontend-stage-command: |
+        mv web/build/index.html web/build/app.html
+        rm -rf server/site
+        mv web/build server/site
+        rm -f server/site/config.js
+
+  release:
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    uses: Felix2yu/.github/.github/workflows/reusable-release.yml@v1
+    with:
+      go-dir: .
+      binary-name: ntfy
+      cgo: static
+      build-tags: sqlite_omit_load_extension osusergo netgo
+      # darwin/windows 不带server（纯客户端），与上游 goreleaser 的分档一致
+      cgo-off-platforms: darwin,windows
+      build-tags-cgo-off: noserver
+      extra-version-vars: main.commit={{sha8}} main.date={{date}}
+      web-dir: web
+      docs-command: |
+        "$PYTHON" -m venv .venv-docs
+        .venv-docs/bin/pip install --disable-pip-version-check -q -r requirements.txt
+        .venv-docs/bin/mkdocs build
+      docs-cache-path: ~/.cache/pip
+      frontend-stage-command: |
+        mv web/build/index.html web/build/app.html
+        rm -rf server/site
+        mv web/build server/site
+        rm -f server/site/config.js

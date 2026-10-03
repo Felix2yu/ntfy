@@ -744,6 +744,12 @@ func TestAccount_Reservation_Delete_Messages_And_Attachments(t *testing.T) {
 		t.Parallel()
 		conf := newTestConfigWithAuthFile(t, databaseURL)
 		conf.AuthDefault = user.PermissionReadWrite
+		// 删除 reservation 时消息会被标记删除、并由 pruneMessages 清掉；附件则由
+		// attachment.Sync() 回收。本用例末尾 waitFor 等的是「消息已消失 + 附件已删」，
+		// 而 pruneMessages 在 CacheDuration==0 时直接 return（"Infinite retention,
+		// no messages to prune"），消息永远不会消失 → waitFor 5s 超时。
+		// 本仓库 DefaultCacheDuration 已改成 0（永不过期，见 563c9de2），故必须显式给非零值。
+		conf.CacheDuration = 13 * time.Hour
 		s := newTestServer(t, conf)
 
 		// Create user with tier

@@ -149,6 +149,28 @@ func (s *Store) SetSubscriptionUpdatedAt(endpoint string, updatedAt int64) error
 	return err
 }
 
+// TouchSubscriptions marks the subscriptions with the given endpoints as still in use, i.e. it
+// refreshes their updated_at timestamp so that RemoveExpiredSubscriptions does not prune them.
+//
+// This is called after a push message was successfully delivered. It is what keeps iOS PWA
+// subscriptions alive: an installed PWA that the user does not open for weeks never re-registers
+// itself (iOS has no Periodic Background Sync), so without this the subscription would silently
+// expire after WebPushExpiryDuration even though push delivery works perfectly fine.
+func (s *Store) TouchSubscriptions(endpoints []string) error {
+	if len(endpoints) == 0 {
+		return nil
+	}
+	return db.ExecTx(s.db, func(tx *sql.Tx) error {
+		now := time.Now().Unix()
+		for _, endpoint := range endpoints {
+			if _, err := tx.Exec(s.queries.updateSubscriptionUpdatedAt, now, endpoint); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // Close closes the underlying database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
