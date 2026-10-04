@@ -143,7 +143,9 @@ const Layout = () => {
   // Preloaded here so the All view (and single topics, via filter) have data on mount -- no empty
   // frame when switching.
   const allNotifications = useLiveQuery(() => subscriptionManager.getAllNotifications());
-  const webPushTopics = useWebPushTopics();
+  // Registers Web Push permission/push listeners; the returned topics are not consumed here
+  // (WebSocket connects for all subscriptions, Web Push is an extra layer on top).
+  useWebPushTopics();
   const subscriptionsWithoutInternal = subscriptions?.filter((s) => !s.internal);
   const newNotificationsCount = subscriptionsWithoutInternal?.reduce((prev, cur) => prev + cur.new, 0) || 0;
   const [selected] = (subscriptionsWithoutInternal || []).filter(
@@ -152,7 +154,7 @@ const Layout = () => {
       (config.base_url === s.baseUrl && params.topic === s.topic),
   );
 
-  useConnectionListeners(account, subscriptions, users, webPushTopics);
+  useConnectionListeners(account, subscriptions, users);
   useAccountListener(setAccount);
   useBackgroundProcesses();
   useEffect(() => updateTitle(newNotificationsCount), [newNotificationsCount]);
@@ -167,7 +169,15 @@ const Layout = () => {
   return (
     <PrefCacheProvider>
       <Box sx={{ display: "flex" }}>
-        <ActionBar selected={selected} topics={topics} onServerTopicsRefresh={refreshTopics} searchDialogOpen={searchDialogOpen} onSearchDialogClose={() => setSearchDialogOpen(false)} onMobileDrawerToggle={() => setMobileDrawerOpen(!mobileDrawerOpen)} onSearchClick={() => setSearchDialogOpen(true)} />
+        <ActionBar
+          selected={selected}
+          topics={topics}
+          onServerTopicsRefresh={refreshTopics}
+          searchDialogOpen={searchDialogOpen}
+          onSearchDialogClose={() => setSearchDialogOpen(false)}
+          onMobileDrawerToggle={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+          onSearchClick={() => setSearchDialogOpen(true)}
+        />
         <Navigation
           subscriptions={subscriptionsWithoutInternal}
           topics={topics}

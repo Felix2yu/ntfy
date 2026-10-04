@@ -1,4 +1,18 @@
-import { AppBar, Toolbar, IconButton, Tooltip, Typography, Box, MenuItem, Button, Divider, ListItemIcon, CircularProgress, Snackbar, useTheme } from "@mui/material";
+import {
+  AppBar,
+  Toolbar,
+  IconButton,
+  Tooltip,
+  Typography,
+  Box,
+  MenuItem,
+  Button,
+  Divider,
+  ListItemIcon,
+  CircularProgress,
+  Snackbar,
+  useTheme,
+} from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import * as React from "react";
 import { useState } from "react";
@@ -22,7 +36,7 @@ import api from "../app/Api";
 import routes from "./routes";
 import db from "../app/db";
 import { topicDisplayName } from "../app/utils";
-import { EVENT_MESSAGE, EVENT_MESSAGE_DELETE } from "../app/events";
+import { EVENT_MESSAGE } from "../app/events";
 import { fadeNavigate } from "../app/transition";
 import Navigation from "./Navigation";
 import accountApi from "../app/AccountApi";
@@ -104,10 +118,22 @@ const ActionBar = (props) => {
         </IconButton>
         {props.selected && <MarkAllReadButton subscription={props.selected} />}
         {props.selected && <HistoryButtons subscription={props.selected} />}
-        {props.selected && <SettingsIcons subscription={props.selected} onUnsubscribe={props.onUnsubscribe} serverTopics={props.topics} onServerTopicsRefresh={props.onServerTopicsRefresh} />}
+        {props.selected && (
+          <SettingsIcons
+            subscription={props.selected}
+            onUnsubscribe={props.onUnsubscribe}
+            serverTopics={props.topics}
+            onServerTopicsRefresh={props.onServerTopicsRefresh}
+          />
+        )}
         <ProfileIcon />
       </Toolbar>
-      <SearchDialog open={!!props.searchDialogOpen} onClose={() => props.onSearchDialogClose?.()} topics={props.topics} selected={props.selected} />
+      <SearchDialog
+        open={!!props.searchDialogOpen}
+        onClose={() => props.onSearchDialogClose?.()}
+        topics={props.topics}
+        selected={props.selected}
+      />
     </AppBar>
   );
 };
@@ -232,7 +258,9 @@ const HistoryButtons = (props) => {
       });
       console.log(`[ActionBar] LoadHistory: after filter ${toAdd.length} messages to add`);
       if (toAdd.length > 0) {
-        toAdd.forEach((n) => console.log(`[ActionBar] LoadHistory: adding msg id=${n.id} event=${n.event} seq_id=${n.sequence_id} time=${n.time}`));
+        toAdd.forEach((n) =>
+          console.log(`[ActionBar] LoadHistory: adding msg id=${n.id} event=${n.event} seq_id=${n.sequence_id} time=${n.time}`),
+        );
       }
       await subscriptionManager.deleteNotifications(subscription.id);
       if (toAdd.length > 0) {
@@ -246,6 +274,7 @@ const HistoryButtons = (props) => {
   };
 
   const handleLoadAllHistory = async () => {
+    // eslint-disable-next-line no-alert -- confirmation dialog before loading full history
     if (!window.confirm(t("notifications_load_all_confirm", "Loading all history may take a long time. Continue?"))) {
       return;
     }
@@ -265,15 +294,9 @@ const HistoryButtons = (props) => {
         {loading ? <CircularProgress size={24} color="inherit" /> : <HistoryIcon />}
       </IconButton>
       <PopupMenu horizontal="right" anchorEl={anchorEl} open={!!anchorEl} onClose={() => setAnchorEl(null)}>
-        <MenuItem onClick={() => handleLoadHistory("24h")}>
-          {t("notifications_load_history_24h", "24h")}
-        </MenuItem>
-        <MenuItem onClick={() => handleLoadHistory("168h")}>
-          {t("notifications_load_history_7d", "7 days")}
-        </MenuItem>
-        <MenuItem onClick={() => handleLoadHistory("720h")}>
-          {t("notifications_load_history_30d", "30 days")}
-        </MenuItem>
+        <MenuItem onClick={() => handleLoadHistory("24h")}>{t("notifications_load_history_24h", "24h")}</MenuItem>
+        <MenuItem onClick={() => handleLoadHistory("168h")}>{t("notifications_load_history_7d", "7 days")}</MenuItem>
+        <MenuItem onClick={() => handleLoadHistory("720h")}>{t("notifications_load_history_30d", "30 days")}</MenuItem>
         <MenuItem onClick={handleLoadAllHistory} sx={{ color: "warning.main" }}>
           {t("notifications_load_history_all", "All history")}
         </MenuItem>

@@ -58,12 +58,12 @@ class Api {
   async search(baseUrl, params) {
     const { q, topic, since, until, priority, limit } = params;
     const searchParams = new URLSearchParams();
-    searchParams.set('q', q);
-    if (topic) searchParams.set('topic', topic);
-    if (since) searchParams.set('since', since.toString());
-    if (until) searchParams.set('until', until.toString());
-    if (priority) searchParams.set('priority', priority.toString());
-    if (limit) searchParams.set('limit', limit.toString());
+    searchParams.set("q", q);
+    if (topic) searchParams.set("topic", topic);
+    if (since) searchParams.set("since", since.toString());
+    if (until) searchParams.set("until", until.toString());
+    if (priority) searchParams.set("priority", priority.toString());
+    if (limit) searchParams.set("limit", limit.toString());
     const url = `${baseUrl}/v1/search?${searchParams.toString()}`;
     console.log(`[Api] Searching messages: ${url}`);
     const response = await fetchOrThrow(url);
@@ -176,27 +176,30 @@ class Api {
     chunk = chunk ? utf8Decoder.decode(chunk) : "";
     const re = /\n|\r|\r\n/gm;
     let startIndex = 0;
+    /* eslint-disable no-await-in-loop -- stream chunks must be read in order */
     for (;;) {
       const match = re.exec(chunk);
-      if (!match) {
+      if (match) {
+        const line = chunk.substring(startIndex, match.index);
+        startIndex = re.lastIndex;
+        if (line) {
+          try {
+            const msg = JSON.parse(line);
+            if (msg.id) messages.push(msg);
+          } catch (e) {
+            console.warn(`[Api, ${shortUrl}] clearTopic skipping invalid line: ${line}`);
+          }
+        }
+      } else {
         if (readerDone) break;
         const remainder = chunk.substr(startIndex);
         ({ value: chunk, done: readerDone } = await reader.read());
         chunk = remainder + (chunk ? utf8Decoder.decode(chunk) : "");
         startIndex = 0;
         re.lastIndex = 0;
-        continue;
-      }
-      const line = chunk.substring(startIndex, match.index);
-      startIndex = re.lastIndex;
-      if (!line) continue;
-      try {
-        const msg = JSON.parse(line);
-        if (msg.id) messages.push(msg);
-      } catch (e) {
-        console.warn(`[Api, ${shortUrl}] clearTopic skipping invalid line: ${line}`);
       }
     }
+    /* eslint-enable no-await-in-loop */
     if (startIndex < chunk.length) {
       try {
         const msg = JSON.parse(chunk.substr(startIndex));
@@ -211,20 +214,25 @@ class Api {
     const toDelete = Object.values(latestBySequenceId).filter((m) => !m.event || m.event === "message");
     console.log(`[Api, ${shortUrl}] clearTopic deleting ${toDelete.length} of ${messages.length} polled messages`);
     if (toDelete.length === 0) return 0;
-    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const delay = (ms) =>
+      new Promise((resolve) => {
+        setTimeout(resolve, ms);
+      });
     const failedMessages = [];
     for (const msg of toDelete) {
       // Must be the sequence ID, not the message ID: other devices key their local notifications by
       // sequence ID, so deleting by message ID would leave them untouched.
       const sequenceId = msg.sequence_id || msg.id;
       let ok = false;
-      for (let retry = 0; retry < 5; retry++) {
+      for (let retry = 0; retry < 5; retry += 1) {
         if (retry > 0) {
-          const wait = 5000 * Math.pow(2, retry - 1);
+          const wait = 5000 * 2 ** (retry - 1);
           console.log(`[Api, ${shortUrl}] clearTopic retry ${retry + 1}/5 for ${sequenceId} after ${wait}ms`);
+          // eslint-disable-next-line no-await-in-loop -- retries must run sequentially
           await delay(wait);
         }
         try {
+          // eslint-disable-next-line no-await-in-loop -- retries must run sequentially
           await this.delete(baseUrl, topic, sequenceId);
           ok = true;
           break;

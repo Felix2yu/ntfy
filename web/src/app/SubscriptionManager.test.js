@@ -28,11 +28,12 @@ const fakeDb = () => {
       },
       where: (query) => ({
         modify: async (changes) => {
-          // eslint-disable-next-line guard-for-in
           for (const [id, notification] of notificationRows) {
-            if (query.id && notification.id !== query.id) continue;
-            if (query.subscriptionId && notification.subscriptionId !== query.subscriptionId) continue;
-            notificationRows.set(id, { ...notification, ...changes });
+            const matchesId = !query.id || notification.id === query.id;
+            const matchesSubscription = !query.subscriptionId || notification.subscriptionId === query.subscriptionId;
+            if (matchesId && matchesSubscription) {
+              notificationRows.set(id, { ...notification, ...changes });
+            }
           }
         },
         toArray: async () =>

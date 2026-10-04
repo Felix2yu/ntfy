@@ -79,13 +79,14 @@ class ConnectionManager {
     // Close connections for groups that no longer exist or have changed
     for (const [groupKey, connection] of this.connections) {
       const target = targetGroups.get(groupKey);
-      const currentSubIds = this.groupSubscriptions.get(groupKey)?.map((s) => s.subscriptionId).sort() ?? [];
+      const currentSubIds =
+        this.groupSubscriptions
+          .get(groupKey)
+          ?.map((s) => s.subscriptionId)
+          .sort() ?? [];
       const targetSubIds = target?.subs.map((s) => s.subscriptionId).sort() ?? [];
 
-      const groupChanged =
-        !target ||
-        currentSubIds.length !== targetSubIds.length ||
-        currentSubIds.some((id, i) => id !== targetSubIds[i]);
+      const groupChanged = !target || currentSubIds.length !== targetSubIds.length || currentSubIds.some((id, i) => id !== targetSubIds[i]);
 
       if (groupChanged) {
         console.log(`[ConnectionManager] Closing connection ${groupKey} (group changed)`);
@@ -97,25 +98,23 @@ class ConnectionManager {
 
     // Create connections for new or changed groups
     for (const [groupKey, { baseUrl, user, subs }] of targetGroups) {
-      if (this.connections.has(groupKey)) {
-        continue; // Already connected with correct membership
+      // Already connected with correct membership
+      if (!this.connections.has(groupKey)) {
+        const connection = new Connection(
+          groupKey,
+          subs,
+          baseUrl,
+          user,
+          (subId, notification) => this.notificationReceived(subId, notification),
+          (subId, state) => this.stateChanged(subId, state),
+        );
+        this.connections.set(groupKey, connection);
+        this.groupSubscriptions.set(groupKey, subs);
+        console.log(
+          `[ConnectionManager] Starting new connection ${groupKey} (${subs.length} topic(s), user: ${user ? user.username : "anonymous"})`,
+        );
+        connection.start();
       }
-      const connection = new Connection(
-        groupKey,
-        subs,
-        baseUrl,
-        user,
-        (subId, notification) => this.notificationReceived(subId, notification),
-        (subId, state) => this.stateChanged(subId, state),
-      );
-      this.connections.set(groupKey, connection);
-      this.groupSubscriptions.set(groupKey, subs);
-      console.log(
-        `[ConnectionManager] Starting new connection ${groupKey} (${subs.length} topic(s), user: ${
-          user ? user.username : "anonymous"
-        })`,
-      );
-      connection.start();
     }
   }
 

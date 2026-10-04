@@ -77,35 +77,12 @@ const AllSubscriptionsList = (props) => {
 
 const SingleSubscriptionList = (props) => {
   const { subscription, allNotifications } = props;
-  const { t } = useTranslation();
-  const [loadingHistory, setLoadingHistory] = useState(false);
   // Filter the preloaded allNotifications instead of a per-topic query (getNotifications(id) ==
   // getAllNotifications() filtered by id), so topic switches are instant.
   const notifications = useMemo(
     () => allNotifications.filter((notification) => notification.subscriptionId === subscription.id),
     [allNotifications, subscription.id],
   );
-
-  const handleLoadHistory = async (since) => {
-    setLoadingHistory(true);
-    try {
-      const messages = await api.poll(subscription.baseUrl, subscription.topic, since);
-      if (messages.length > 0) {
-        await subscriptionManager.addNotifications(subscription.id, messages);
-      }
-    } catch (e) {
-      console.error("[Notifications] Failed to load history:", e);
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
-
-  const handleLoadAllHistory = async () => {
-    if (!window.confirm(t("notifications_load_all_confirm", "Loading all history may take a long time. Continue?"))) {
-      return;
-    }
-    await handleLoadHistory("all");
-  };
 
   if (notifications.length === 0) {
     return <NoNotifications subscription={subscription} />;

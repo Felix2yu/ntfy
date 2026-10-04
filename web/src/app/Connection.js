@@ -73,7 +73,7 @@ class Connection {
           return;
         }
         // Route message to the correct subscription(s) by topic
-        const topic = data.topic;
+        const { topic } = data;
         const subscriptionIds = this.topicToSubscriptionIds.get(topic);
         if (subscriptionIds) {
           // Update since for this topic

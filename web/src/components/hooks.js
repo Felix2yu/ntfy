@@ -24,15 +24,12 @@ import { EVENT_MESSAGE_DELETE, EVENT_MESSAGE_CLEAR, SW_PERIODIC_SYNC_EXTEND_TOKE
  * will be delivered via Web Push. However, we still need to connect to other servers via WebSocket, or for internal
  * topics, such as sync topics (st_...).
  */
-export const useConnectionListeners = (account, subscriptions, users, webPushTopics) => {
+export const useConnectionListeners = (account, subscriptions, users) => {
   // All subscriptions always get WebSocket connections. Web Push is an additional
   // layer for background notifications; it must not replace WebSocket, because
   // the push subscription can fail (e.g. Safari NotAllowedError) leaving topics
   // with no notification path at all.
-  const wsSubscriptions = useMemo(
-    () => subscriptions ?? [],
-    [JSON.stringify(subscriptions?.map(({ id }) => id))],
-  );
+  const wsSubscriptions = useMemo(() => subscriptions ?? [], [JSON.stringify(subscriptions?.map(({ id }) => id))]);
 
   // Register listeners for incoming messages, and connection state changes
   useEffect(

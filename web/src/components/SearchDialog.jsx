@@ -55,8 +55,8 @@ const SearchDialog = (props) => {
       const params = {
         q: query.trim(),
         topic: topic || undefined,
-        since: since ? Math.floor(new Date(since + "T00:00:00").getTime() / 1000) : undefined,
-        until: until ? Math.floor(new Date(until + "T23:59:59").getTime() / 1000) : undefined,
+        since: since ? Math.floor(new Date(`${since}T00:00:00`).getTime() / 1000) : undefined,
+        until: until ? Math.floor(new Date(`${until}T23:59:59`).getTime() / 1000) : undefined,
         priority: priority || undefined,
         limit: 50,
       };
@@ -102,17 +102,13 @@ const SearchDialog = (props) => {
           <Stack direction="row" spacing={2}>
             <FormControl fullWidth>
               <InputLabel>{t("search_dialog_topic", "Topic (optional)")}</InputLabel>
-              <Select
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                label={t("search_dialog_topic", "Topic (optional)")}
-              >
+              <Select value={topic} onChange={(e) => setTopic(e.target.value)} label={t("search_dialog_topic", "Topic (optional)")}>
                 <MenuItem value="">
                   <em>{t("search_dialog_all_topics", "All topics")}</em>
                 </MenuItem>
-                {topics?.map((t) => (
-                  <MenuItem key={t} value={t}>
-                    {t}
+                {topics?.map((topicName) => (
+                  <MenuItem key={topicName} value={topicName}>
+                    {topicName}
                   </MenuItem>
                 ))}
               </Select>
@@ -172,9 +168,7 @@ const SearchDialog = (props) => {
                 {t("search_dialog_results_count", { count: results.length }, "{{count}} results found")}
               </Typography>
               {results.length === 0 ? (
-                <Typography color="text.secondary">
-                  {t("search_dialog_no_results", "No results found")}
-                </Typography>
+                <Typography color="text.secondary">{t("search_dialog_no_results", "No results found")}</Typography>
               ) : (
                 <Stack spacing={1} sx={{ maxHeight: 400, overflow: "auto" }}>
                   {results.map((msg) => (
