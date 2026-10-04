@@ -1,0 +1,4 @@
+minimumReleaseAgeExclude:
+  - vite-plugin-pwa@2.0.0
+patchedDependencies:
+  vite-plugin-pwa@2.0.0: patches/vite-plugin-pwa@2.0.0.patch

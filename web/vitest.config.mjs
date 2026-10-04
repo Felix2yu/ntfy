@@ -1,7 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { defineConfig } from "vitest/config";
 
-// Standalone config (separate from vite.config.js) so the PWA plugin isn't loaded during tests.
+// Standalone config (separate from vite.config.mjs) so the PWA plugin isn't loaded during tests.
 // Tests run in the default "node" environment -- see src/test/setup.js for the minimal window stub
 // that lets the pure-logic modules import without jsdom.
 export default defineConfig({

@@ -8,6 +8,23 @@ export default defineConfig(({ mode }) => ({
     outDir: "build",
     assetsDir: "static/media",
     sourcemap: true,
+    // Rolldown manual code splitting: pull heavy vendor libs out of the main entry chunk
+    // (each group lands in its own chunk, keeping every chunk under the 500 kB warning).
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: "react-vendor",
+              test: /node_modules\/(react|react-dom|react-router|react-i18next|i18next|scheduler)\//,
+              priority: 20,
+            },
+            { name: "mui-vendor", test: /node_modules\/(@mui|@emotion)\//, priority: 15 },
+            { name: "vendor", test: /node_modules\//, priority: 10 },
+          ],
+        },
+      },
+    },
   },
   server: {
     port: 3000,
