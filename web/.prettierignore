@@ -3,3 +3,5 @@ dist/
 public/static/langs/
 src/app/emojis.js
 src/app/emojisMapped.js
+# lockfile is managed by pnpm; prettier reformatting must not touch it
+pnpm-lock.yaml

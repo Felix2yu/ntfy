@@ -425,7 +425,8 @@ const ClearDialog = (props) => {
         )}
         {result && !result.ok && (
           <Alert severity="error" sx={{ mt: 1 }} onClose={() => setResult(null)}>
-            {t("clear_dialog_error")}{result.error ? `: ${result.error}` : ""}
+            {t("clear_dialog_error")}
+            {result.error ? `: ${result.error}` : ""}
           </Alert>
         )}
       </DialogContent>
@@ -433,12 +434,7 @@ const ClearDialog = (props) => {
         <Button onClick={handleClose} disabled={clearing}>
           {t("common_close")}
         </Button>
-        <Button
-          onClick={handleClear}
-          disabled={clearing || result?.ok}
-          variant="contained"
-          color="error"
-        >
+        <Button onClick={handleClear} disabled={clearing || result?.ok} variant="contained" color="error">
           {clearing ? t("clear_dialog_clearing") : t("clear_dialog_clear")}
         </Button>
       </DialogFooter>

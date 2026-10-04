@@ -184,7 +184,7 @@ const NavList = (props) => {
             <TopicList
               topics={topics}
               subscriptions={props.subscriptions || []}
-              selectedTopic={location.pathname.split('/').pop()}
+              selectedTopic={location.pathname.split("/").pop()}
               onServerTopicsRefresh={props.onServerTopicsRefresh}
             />
             <Divider sx={{ my: 1 }} />
@@ -327,8 +327,8 @@ const TopicList = (props) => {
     navigate(routes.forTopic(topic));
   };
 
-  const subscribedTopics = new Set((props.subscriptions || []).map(s => s.topic));
-  const unsubscribedTopics = [...props.topics].filter(topic => !subscribedTopics.has(topic)).sort();
+  const subscribedTopics = new Set((props.subscriptions || []).map((s) => s.topic));
+  const unsubscribedTopics = [...props.topics].filter((topic) => !subscribedTopics.has(topic)).sort();
 
   if (unsubscribedTopics.length === 0) {
     return null;
@@ -337,10 +337,7 @@ const TopicList = (props) => {
   return (
     <>
       {unsubscribedTopics.map((topic) => (
-        <ListItemButton
-          key={topic}
-          onClick={() => handleTopicClick(topic)}
-        >
+        <ListItemButton key={topic} onClick={() => handleTopicClick(topic)}>
           <ListItemIcon>
             <ChatBubbleOutlineIcon />
           </ListItemIcon>
@@ -418,7 +415,12 @@ const SubscriptionItem = (props) => {
         {deprecated && (
           <ListItemIcon edge="end" sx={{ minWidth: "26px" }}>
             <Tooltip title={t("subscription_deprecated_tooltip", "This topic was retired on the server")}>
-              <Chip size="small" color="warning" label={t("subscription_deprecated", "Retired")} sx={{ height: "20px", fontSize: "11px" }} />
+              <Chip
+                size="small"
+                color="warning"
+                label={t("subscription_deprecated", "Retired")}
+                sx={{ height: "20px", fontSize: "11px" }}
+              />
             </Tooltip>
           </ListItemIcon>
         )}
