@@ -18,6 +18,9 @@ const fakeDb = () => {
   const notificationRows = new Map();
   return {
     rows,
+    // Dexie runs fn inside a readwrite transaction over the given tables; the fake has no
+    // concurrent writer to isolate, so it just calls fn.
+    transaction: async (_mode, _tables, fn) => fn(),
     notifications: {
       get: async (id) => notificationRows.get(id),
       add: async (notification) => {
@@ -41,6 +44,7 @@ const fakeDb = () => {
             Object.entries(query).every(([key, value]) => notification[key] === value),
           ),
       }),
+      bulkGet: async (ids) => ids.map((id) => notificationRows.get(id)),
       bulkPut: async (notifications) => {
         notifications.forEach((notification) => notificationRows.set(notification.id, notification));
       },
