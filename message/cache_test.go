@@ -1221,3 +1221,83 @@ func TestStore_MessagesSinceID_ReplicaLagFallsBackToPrimary(t *testing.T) {
 	require.Nil(t, err)
 	require.Len(t, messages, 0) // Correct cut-off via primary; the lagged replica has nothing newer
 }
+
+func TestStore_SearchMessages(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, s *message.Cache) {
+		add := func(topic, title, msg string, time int64, priority int) {
+			m := model.NewDefaultMessage(topic, msg)
+			m.Time = time
+			m.Title = title
+			m.Priority = priority
+			require.Nil(t, s.AddMessage(m))
+		}
+		add("alerts", "磁盘告警", "disk usage critical", 3, 5)
+		add("alerts", "CPU", "cpu steal rising", 4, 1)
+		add("backup", "disk snapshot", "completed in 3m", 5, 1)
+		add("other", "nothing", "unrelated", 6, 5)
+
+		search := func(params message.SearchParams) []*model.Message {
+			messages, err := s.SearchMessages(params)
+			require.Nil(t, err)
+			return messages
+		}
+		messages := func(ms []*model.Message) []string {
+			out := make([]string, len(ms))
+			for i, m := range ms {
+				out[i] = m.Message
+			}
+			return out
+		}
+
+		// Matches message and title alike, newest first; LIKE/ILIKE are both case-insensitive
+		// for ASCII, so one expectation covers the two backends
+		found := search(message.SearchParams{Query: "disk"})
+		require.Equal(t, []string{"completed in 3m", "disk usage critical"}, messages(found))
+
+		// A non-ASCII keyword has to survive the round trip too
+		require.Equal(t, []string{"disk usage critical"}, messages(search(message.SearchParams{Query: "磁盘"})))
+
+		// Every other parameter narrows the same result set down
+		require.Equal(t, []string{"disk usage critical"}, messages(search(message.SearchParams{Query: "disk", Topic: "alerts"})))
+		require.Equal(t, []string{"completed in 3m"}, messages(search(message.SearchParams{Query: "disk", Priority: 1})))
+		require.Equal(t, []string{"completed in 3m"}, messages(search(message.SearchParams{Query: "disk", Since: 4})))
+		require.Equal(t, []string{"disk usage critical"}, messages(search(message.SearchParams{Query: "disk", Until: 4})))
+		require.Equal(t, []string{"completed in 3m"}, messages(search(message.SearchParams{Query: "disk", Limit: 1})))
+
+		// Limit defaults to 50 and caps at 500, so an absurd limit is not an error
+		for i := 0; i < 51; i++ {
+			add("bulk", "b", fmt.Sprintf("bulk-%d", i), int64(100+i), 1)
+		}
+		require.Len(t, search(message.SearchParams{Query: "bulk"}), 50)
+		require.Len(t, search(message.SearchParams{Query: "bulk", Limit: 10000}), 51)
+
+		require.Empty(t, search(message.SearchParams{Query: "no such text"}))
+	})
+}
+
+func TestStore_DeleteMessagesForTopic(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, s *message.Cache) {
+		require.Nil(t, s.AddMessage(model.NewDefaultMessage("gone", "1")))
+		require.Nil(t, s.AddMessage(model.NewDefaultMessage("gone", "2")))
+		require.Nil(t, s.AddMessage(model.NewDefaultMessage("kept", "3")))
+
+		ids, err := s.DeleteMessagesForTopic("gone")
+		require.Nil(t, err)
+		require.Len(t, ids, 2)
+
+		messages, err := s.Messages("gone", model.SinceAllMessages, false)
+		require.Nil(t, err)
+		require.Len(t, messages, 0)
+
+		topics, err := s.Topics()
+		require.Nil(t, err)
+		require.NotContains(t, topics, "gone")
+		require.Contains(t, topics, "kept")
+
+		// Deleting again is a no-op, not an error; the caller keeps the topic retired anyway
+		ids, err = s.DeleteMessagesForTopic("gone")
+		require.Nil(t, err)
+		require.Len(t, ids, 0)
+	})
+}
+
