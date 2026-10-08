@@ -20,7 +20,7 @@ const (
 		SELECT * FROM unnest($1::TEXT[], $2::TEXT[], $3::BIGINT[], $4::TEXT[], $5::BIGINT[], $6::TEXT[], $7::TEXT[], $8::TEXT[], $9::INT[], $10::TEXT[], $11::TEXT[], $12::TEXT[], $13::TEXT[], $14::TEXT[], $15::TEXT[], $16::BIGINT[], $17::BIGINT[], $18::TEXT[], $19::BOOLEAN[], $20::TEXT[], $21::TEXT[], $22::TEXT[], $23::TEXT[], $24::BOOLEAN[])
 	`
 	postgresSelectMessagesSearchQuery = `
-		SELECT mid, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, \"user\", content_type, encoding
+		SELECT mid, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding
 		FROM message
 		WHERE published = TRUE
 		  AND (message ILIKE $1 OR title ILIKE $2)
