@@ -1,7 +1,11 @@
 # 临时诊断工作流：定位 CI 产物中非受保护 AVX 指令（init_cpu_features vmovd/vpinsrd）的来源。
 # 用完即删。
 name: diag-avx
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'diag/**']
+    paths: ['.github/workflows/diag-avx.yml']
 permissions:
   contents: read
 jobs:
