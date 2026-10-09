@@ -473,9 +473,23 @@ the primary and replica URLs):
 | Parameter                 | Default | Description                                                                      |
 |---------------------------|---------|----------------------------------------------------------------------------------|
 | `pool_max_conns`          | 10      | Maximum number of open connections to the database                               |
-| `pool_max_idle_conns`     | -       | Maximum number of idle connections in the pool                                   |
+| `pool_max_idle_conns`     | = `pool_max_conns` | Maximum number of idle connections in the pool                          |
 | `pool_conn_max_lifetime`  | -       | Maximum amount of time a connection may be reused (Go duration, e.g. `5m`, `1h`) |
 | `pool_conn_max_idle_time` | -       | Maximum amount of time a connection may be idle (Go duration, e.g. `30s`, `5m`)  |
+
+For a busy server, the recommended settings are `pool_max_conns=30&pool_conn_max_lifetime=15m&pool_conn_max_idle_time=5m`
+on the primary and on every replica (this is what ntfy.sh runs). The reasoning:
+
+* `pool_max_conns`: the message writer uses one connection per batch, and every other query (polls, access checks,
+  stats) uses one for a few milliseconds, so 30 covers publish bursts of hundreds of messages per second. Make sure the
+  PostgreSQL `max_connections` setting covers the pool size times the number of ntfy instances, plus other clients.
+* `pool_max_idle_conns`: leave it at the default (equal to `pool_max_conns`). A smaller value closes connections after
+  every burst, so the next burst pays a DNS lookup, a TCP/TLS handshake and authentication per query.
+* `pool_conn_max_lifetime`: a long-lived PostgreSQL backend keeps growing (statement and catalog caches are never given
+  back), and a managed database may move to a new address on failover; recycling connections every 15 minutes bounds
+  both without noticeable churn.
+* `pool_conn_max_idle_time`: releases connections the server does not need overnight; under steady traffic the pool
+  rotates through all connections, so the limit never triggers.
 
 
 ## Message cache
@@ -2357,6 +2371,11 @@ variable before running the `ntfy` command (e.g. `export NTFY_LISTEN_HTTP=:80`).
 | `cert-file`                                | `NTFY_CERT_FILE`                                | *filename*                                          | -                 | HTTPS/TLS certificate file, only used if `listen-https` is set.                                                                                                                                                                         |
 | `firebase-key-file`                        | `NTFY_FIREBASE_KEY_FILE`                        | *filename*                                          | -                 | If set, also publish messages to a Firebase Cloud Messaging (FCM) topic for your app. This is optional and only required to save battery when using the Android app. See [Firebase (FCM)](#firebase-fcm).                               |
 | `database-url`                             | `NTFY_DATABASE_URL`                             | *string (connection URL)*                           | -                 | PostgreSQL connection string (e.g. `postgres://user:pass@host:5432/ntfy`). If set, uses PostgreSQL for all database-backed stores (message cache, user manager, web push) instead of SQLite. See [database options](#database-options). |
+| `experimental-cluster-node-id`             | `NTFY_EXPERIMENTAL_CLUSTER_NODE_ID`             | *string*                                            | -                 | Reserved for clustering, not functional yet. Stable per-node identifier (e.g. the hostname).                                                                                                                                            |
+| `experimental-cluster-listen`              | `NTFY_EXPERIMENTAL_CLUSTER_LISTEN`              | `[host]:port`                                       | -                 | Reserved for clustering, not functional yet. Private listen address for node-to-node traffic; a server started with this set refuses to start.                                                                                           |
+| `experimental-cluster-advertise-url`       | `NTFY_EXPERIMENTAL_CLUSTER_ADVERTISE_URL`       | *URL*                                               | `http://<experimental-cluster-listen>` | Reserved for clustering, not functional yet. URL under which other nodes reach this node's cluster listener.                                                                                        |
+| `experimental-cluster-secret`              | `NTFY_EXPERIMENTAL_CLUSTER_SECRET`              | *string*                                            | -                 | Reserved for clustering, not functional yet. Shared secret authenticating node-to-node traffic; must match on all nodes.                                                                                                                 |
+| `experimental-cluster-batch-linger`        | `NTFY_EXPERIMENTAL_CLUSTER_BATCH_LINGER`        | *duration*                                          | `500ms`           | Reserved for clustering, not functional yet. How long messages wait to form a node-to-node delivery batch; `0` sends immediately.                                                                                                        |
 | `database-replica-urls`                    | `NTFY_DATABASE_REPLICA_URLS`                    | *list of strings (connection URLs)*                 | -                 | PostgreSQL read replica connection strings. Non-critical read-only queries are distributed across replicas (round-robin) with automatic fallback to primary. Requires `database-url`.                                                   |
 | `cache-file`                               | `NTFY_CACHE_FILE`                               | *filename*                                          | -                 | If set, messages are cached in a local SQLite database instead of only in-memory. This allows for service restarts without losing messages in support of the since= parameter. See [message cache](#message-cache).                     |
 | `cache-duration`                           | `NTFY_CACHE_DURATION`                           | *duration*                                          | 12h               | Duration for which messages will be buffered before they are deleted. This is required to support the `since=...` and `poll=1` parameter. Set this to `0` to disable the cache entirely.                                                |

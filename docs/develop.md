@@ -279,6 +279,7 @@ Reference: <https://stackoverflow.com/questions/34160509/options-for-testing-ser
 2. Run the server (step 2 above)
 
 3. Open <http://localhost/>
+
 ### Build the docs
 The sources for the docs live in `docs/`. Similarly to the web app, you can simply run `make docs` to build the 
 documentation. As long as you have `mkdocs` installed (see above), this should work fine:

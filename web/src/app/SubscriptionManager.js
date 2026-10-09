@@ -232,33 +232,37 @@ export class SubscriptionManager {
   }
 
   /**
-   * Adds notification, or returns false if it already exists and is already marked new.
-   * If the notification exists but was added by the Poller (new: 0), upgrades it to new: 1
-   * and returns true so the caller triggers a desktop notification.
+   * Adds notification, or returns false if it already exists.
+   * An existing notification keeps its stored read state (e.g. the Poller inserted it first, or
+   * the server re-sent a cached message after reconnect/refresh); only the last-seen marker moves.
    */
   async addNotification(subscriptionId, notification) {
     if (notification.event === EVENT_MESSAGE_DELETE || notification.event === EVENT_MESSAGE_CLEAR) {
-      return false;
-    }
-    const exists = await this.db.notifications.get(notification.id);
-    if (exists) {
-      // Notification already in DB (e.g. the Poller inserted it first, or the server
-      // re-sent a cached message after reconnect/refresh). Never flip an already-read
-      // notification back to "new" — keep the user's read state and just refresh the
-      // last-seen marker. Only genuinely new notifications add to the unread bubble.
-      await this.db.subscriptions.update(subscriptionId, { last: notification.id });
       return false;
     }
     try {
       // Note: Service worker (sw.js) and addNotifications() duplicates this logic,
       // so if you change it here, change it there too.
 
-      // Add notification to database
-      await this.db.notifications.add({
-        ...messageWithSequenceId(notification),
-        subscriptionId,
-        new: 1, // New marker (used for bubble indicator); cannot be boolean; Dexie index limitation
+      // Add notification to database; check and add in one transaction, so a poll storing the
+      // same message concurrently (see addNotifications) can't slip in between
+      const added = await this.db.transaction("rw", this.db.notifications, async () => {
+        if (await this.db.notifications.get(notification.id)) {
+          return false;
+        }
+        await this.db.notifications.add({
+          ...messageWithSequenceId(notification),
+          subscriptionId,
+          new: 1, // New marker (used for bubble indicator); cannot be boolean; Dexie index limitation
+        });
+        return true;
       });
+      if (!added) {
+        // Never flip an already-read notification back to "new", but keep the last-seen marker
+        // up to date, so a reconnect does not replay what we already have.
+        await this.db.subscriptions.update(subscriptionId, { last: notification.id });
+        return false;
+      }
 
       // FIXME consider put() for double tab
       // Update subscription last message id (for ?since=... queries)
@@ -271,22 +275,23 @@ export class SubscriptionManager {
     return true;
   }
 
-  /** Adds/replaces notifications, will not throw if they exist.
-   *  Preserves the `new` flag of existing notifications so the Poller
-   *  does not silently clear unread badges. */
+  /** Adds notifications, skipping ones that already exist; will not throw if they exist.
+   *  Skipping instead of re-writing keeps the stored read state of the existing row. */
   async addNotifications(subscriptionId, notifications) {
-    const notificationsToAdd = await Promise.all(
-      notifications.map(async (notification) => {
-        const existing = await this.db.notifications.get(notification.id);
-        return {
+    // Skip notifications that are already stored (e.g. delivered via WebSocket while this poll
+    // was in flight), so overwriting them doesn't drop their "new" marker
+    await this.db.transaction("rw", this.db.notifications, async () => {
+      const existing = await this.db.notifications.bulkGet(notifications.map((n) => n.id));
+      const notificationsWithSubscriptionId = notifications
+        .filter((_, i) => !existing[i])
+        .map((notification) => ({
           ...messageWithSequenceId(notification),
           subscriptionId,
-          new: existing?.new ?? 0,
-        };
-      }),
-    );
+          new: 0, // Added by the Poller: shown, but not unread
+        }));
+      await this.db.notifications.bulkPut(notificationsWithSubscriptionId);
+    });
     const lastNotificationId = notifications.at(-1).id;
-    await this.db.notifications.bulkPut(notificationsToAdd);
     await this.db.subscriptions.update(subscriptionId, {
       last: lastNotificationId,
     });

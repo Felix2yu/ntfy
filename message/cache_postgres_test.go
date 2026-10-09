@@ -55,10 +55,13 @@ func TestPostgresStore_Migration_From14(t *testing.T) {
 	require.Nil(t, err)
 	store, err := message.NewPostgresStore(testDB, 0, 0)
 	require.Nil(t, err)
-	// The 14 -> 15 step ran: version bumped, partial index created
+	// The 14 -> 15 and 15 -> 16 steps ran: version bumped, partial index created, claim column added
 	var version int
 	require.Nil(t, testDB.QueryRow(`SELECT version FROM schema_version WHERE store = 'message'`).Scan(&version))
-	require.Equal(t, 15, version)
+	require.Equal(t, 16, version)
+	var claimedAtCount int
+	require.Nil(t, testDB.QueryRow(`SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'message' AND column_name = 'claimed_at' AND table_schema = current_schema()`).Scan(&claimedAtCount))
+	require.Equal(t, 1, claimedAtCount)
 	var indexCount int
 	require.Nil(t, testDB.QueryRow(`SELECT COUNT(*) FROM pg_indexes WHERE indexname = 'idx_message_attachment_expires' AND schemaname = current_schema()`).Scan(&indexCount))
 	require.Equal(t, 1, indexCount)
@@ -73,4 +76,29 @@ func TestPostgresStore_Migration_From14(t *testing.T) {
 	_, err = message.NewPostgresStore(freshDB, 0, 0)
 	require.Nil(t, err)
 	require.Equal(t, dbtest.PostgresSchema(t, freshDB), dbtest.PostgresSchema(t, testDB))
+}
+
+func TestPostgresStore_MessagesCount_UsesPlannerEstimate(t *testing.T) {
+	// The manager calls MessagesCount every minute for a metric; a COUNT(*) scans the whole
+	// table on every call, so once the table has been analyzed, the planner's estimate is used
+	testDB := dbtest.CreateTestPostgres(t)
+	store, err := message.NewPostgresStore(testDB, 0, 0)
+	require.Nil(t, err)
+	for i := 0; i < 10; i++ {
+		require.Nil(t, store.AddMessage(model.NewDefaultMessage("mytopic", "some message")))
+	}
+
+	// Never analyzed: falls back to an exact count
+	count, err := store.MessagesCount()
+	require.Nil(t, err)
+	require.Equal(t, 10, count)
+
+	// Analyzed, then rows deleted: the estimate lags until the next (auto)analyze
+	_, err = testDB.Exec(`ANALYZE message`)
+	require.Nil(t, err)
+	_, err = testDB.Exec(`DELETE FROM message WHERE id IN (SELECT id FROM message LIMIT 4)`)
+	require.Nil(t, err)
+	count, err = store.MessagesCount()
+	require.Nil(t, err)
+	require.Equal(t, 10, count)
 }
