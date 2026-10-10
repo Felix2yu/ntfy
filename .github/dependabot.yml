@@ -6,6 +6,24 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+    # 默认只有 5，达到上限后会「静默停止」提新 PR 且不报错
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "build"
+      prefix-development: "chore"
+      include: "scope"
+    groups:
+      web-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
+      web-major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
 
   - package-ecosystem: "gomod"
     directory: "/"
@@ -13,6 +31,41 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "build"
+      prefix-development: "chore"
+      include: "scope"
+    groups:
+      go-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
+      go-major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+
+  # Dockerfile / Dockerfile-arm / Dockerfile-build 三个装配式镜像的基镜像
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
+    labels:
+      - "dependencies"
+      - "docker"
+    groups:
+      docker-all:
+        patterns:
+          - "*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -20,6 +73,12 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+    labels:
+      - "dependencies"
+      - "ci"
     groups:
       all:
         patterns:
