@@ -470,18 +470,23 @@ func newWebPushSubscriptionExpiringPayload() *webPushControlMessagePayload {
 
 // https://developer.mozilla.org/en-US/docs/Web/Manifest
 type webManifestResponse struct {
-	Name            string                `json:"name"`
-	Description     string                `json:"description"`
-	ShortName       string                `json:"short_name"`
-	Scope           string                `json:"scope"`
-	StartURL        string                `json:"start_url"`
-	Display         string                `json:"display"`
-	DisplayOverride []string              `json:"display_override,omitempty"`
-	BackgroundColor string                `json:"background_color"`
-	ThemeColor      string                `json:"theme_color"`
-	Icons           []*webManifestIcon    `json:"icons"`
+	ID              string                   `json:"id,omitempty"`
+	Name            string                   `json:"name"`
+	Description     string                   `json:"description"`
+	ShortName       string                   `json:"short_name"`
+	Lang            string                   `json:"lang,omitempty"`
+	Dir             string                   `json:"dir,omitempty"`
+	Scope           string                   `json:"scope"`
+	StartURL        string                   `json:"start_url"`
+	Display         string                   `json:"display"`
+	DisplayOverride []string                 `json:"display_override,omitempty"`
+	Orientation     string                   `json:"orientation,omitempty"`
+	BackgroundColor string                   `json:"background_color"`
+	ThemeColor      string                   `json:"theme_color"`
+	Categories      []string                 `json:"categories,omitempty"`
+	Icons           []*webManifestIcon       `json:"icons"`
 	Screenshots     []*webManifestScreenshot `json:"screenshots,omitempty"`
-	Shortcuts       []*webManifestShortcut `json:"shortcuts,omitempty"`
+	Shortcuts       []*webManifestShortcut   `json:"shortcuts,omitempty"`
 }
 
 type webManifestIcon struct {

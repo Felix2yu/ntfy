@@ -66,7 +66,7 @@ export default defineConfig(({ mode }) => ({
         theme_color: "#317f6f",
         icons: [
           {
-            src: "/static/images/pwa-192x192.png",
+            src: "/static/images/icon-192.png",
             sizes: "192x192",
             type: "image/png",
           },

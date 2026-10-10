@@ -45,22 +45,28 @@ func (s *Server) handleWebConfig(w http.ResponseWriter, _ *http.Request, _ *visi
 // handleWebManifest serves the web app manifest for the progressive web app (PWA)
 func (s *Server) handleWebManifest(w http.ResponseWriter, _ *http.Request, _ *visitor) error {
 	response := &webManifestResponse{
+		ID:              "/",
 		Name:            "ntfy",
 		Description:     "ntfy lets you send push notifications via scripts from any computer or phone",
 		ShortName:       "ntfy",
+		Lang:            "en",
+		Dir:             "ltr",
 		Scope:           "/",
 		StartURL:        s.config.WebRoot,
 		Display:         "standalone",
 		DisplayOverride: []string{"window-controls-overlay", "standalone"},
+		Orientation:     "any",
 		BackgroundColor: "#ffffff",
 		ThemeColor:      "#317f6f",
+		Categories:      []string{"utilities"},
 		Icons: []*webManifestIcon{
-			{SRC: "/static/images/pwa-192x192.png", Sizes: "192x192", Type: "image/png"},
-			{SRC: "/static/images/pwa-512x512.png", Sizes: "512x512", Type: "image/png"},
-			{SRC: "/static/images/pwa-512x512.png", Sizes: "512x512", Type: "image/png", Purpose: "maskable"},
+			{SRC: "/static/images/icon-192.png", Sizes: "192x192", Type: "image/png"},
+			{SRC: "/static/images/icon-512.png", Sizes: "512x512", Type: "image/png"},
+			{SRC: "/static/images/icon-maskable-192.png", Sizes: "192x192", Type: "image/png", Purpose: "maskable"},
+			{SRC: "/static/images/icon-maskable-512.png", Sizes: "512x512", Type: "image/png", Purpose: "maskable"},
 		},
 		Screenshots: []*webManifestScreenshot{
-			{SRC: "/static/images/pwa-512x512.png", Sizes: "512x512", Type: "image/png", Form: "narrow", Label: "ntfy notifications"},
+			{SRC: "/static/images/icon-512.png", Sizes: "512x512", Type: "image/png", Form: "narrow", Label: "ntfy notifications"},
 		},
 		Shortcuts: []*webManifestShortcut{
 			{Name: "Publish notification", URL: "/"},

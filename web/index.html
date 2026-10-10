@@ -17,9 +17,15 @@
     <meta name="apple-mobile-web-app-title" content="ntfy" />
     <link rel="apple-touch-icon" href="/static/images/apple-touch-icon.png" sizes="180x180" />
     <link rel="mask-icon" href="/static/images/ntfy-mask.svg" color="#317f6f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
 
-    <!-- Favicon, see favicon.io -->
-    <link rel="icon" type="image/png" href="/static/images/favicon.ico" />
+    <!-- Favicon：ico 是多尺寸位图（16/32/48），type 必须写 image/x-icon；
+         原来写成 image/png 虽不影响显示，但会让 DevTools 记一条类型不符的告警。
+         favicon.svg 与 icon-512.png 同一构图（绿底 + 气泡），现代浏览器优先取它。 -->
+    <link rel="icon" href="/static/images/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/images/icon-192.png" />
 
     <!-- Previews in Google, Slack, WhatsApp, etc. -->
     <meta
