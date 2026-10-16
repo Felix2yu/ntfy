@@ -275,12 +275,15 @@ export class SubscriptionManager {
     return true;
   }
 
-  /** Adds notifications, skipping ones that already exist; will not throw if they exist.
-   *  Skipping instead of re-writing keeps the stored read state of the existing row. */
+  /**
+   * Adds notifications (at most one per sequence), skipping ones that already exist and replacing
+   * older versions of the same sequence; will not throw if they exist. Skipping instead of
+   * re-writing keeps the stored read state of the existing row.
+   */
   async addNotifications(subscriptionId, notifications) {
-    // Skip notifications that are already stored (e.g. delivered via WebSocket while this poll
-    // was in flight), so overwriting them doesn't drop their "new" marker
     await this.db.transaction("rw", this.db.notifications, async () => {
+      // Skip notifications that are already stored (e.g. delivered via WebSocket while this poll
+      // was in flight), so overwriting them doesn't drop their "new" marker
       const existing = await this.db.notifications.bulkGet(notifications.map((n) => n.id));
       const notificationsWithSubscriptionId = notifications
         .filter((_, i) => !existing[i])
@@ -289,7 +292,18 @@ export class SubscriptionManager {
           subscriptionId,
           new: 0, // Added by the Poller: shown, but not unread
         }));
-      await this.db.notifications.bulkPut(notificationsWithSubscriptionId);
+
+      // An update replaces the stored versions of its sequence (e.g. one the WebSocket missed), unless
+      // a newer version is stored already (e.g. this poll fetched it just before the update arrived)
+      const versions = await Promise.all(
+        notificationsWithSubscriptionId.map((n) => this.db.notifications.where({ subscriptionId, sequenceId: n.sequenceId }).toArray()),
+      );
+      const updates = notificationsWithSubscriptionId
+        .map((n, i) => ({ ...n, ...(versions[i].some((v) => v.new === 1) && { new: 1 }) })) // Stays unread
+        .filter((n, i) => versions[i].every((v) => v.time <= n.time));
+      const replaced = versions.flat().filter((v) => updates.some((n) => n.sequenceId === v.sequenceId));
+      await this.db.notifications.bulkDelete(replaced.map((v) => v.id));
+      await this.db.notifications.bulkPut(updates);
     });
     const lastNotificationId = notifications.at(-1).id;
     await this.db.subscriptions.update(subscriptionId, {

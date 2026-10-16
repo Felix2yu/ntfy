@@ -3,52 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // SubscriptionManager pulls in a handful of browser/Dexie-heavy singletons at import time. Mock
 // them so the module imports cleanly under the node test environment; the tests construct their
 // own SubscriptionManager with an in-memory fake db, so the real db singleton is never used.
-vi.mock("./Api", () => ({ default: { clearMessages: vi.fn() } }));
+vi.mock("./Api", () => ({ default: {} }));
 vi.mock("./Notifier", () => ({ default: {} }));
 vi.mock("./Prefs", () => ({ default: {} }));
 vi.mock("./db", () => ({ default: () => ({}) }));
 
 const { SubscriptionManager } = await import("./SubscriptionManager");
-const api = (await import("./Api")).default;
+const { default: createDb } = await vi.importActual("./db");
 
 // Minimal in-memory stand-in for the Dexie "subscriptions" table, implementing just the surface
 // that syncFromRemote() (and the upsert/remove/update helpers it calls) touches.
 const fakeDb = () => {
   const rows = new Map();
-  const notificationRows = new Map();
   return {
     rows,
-    // Dexie runs fn inside a readwrite transaction over the given tables; the fake has no
-    // concurrent writer to isolate, so it just calls fn.
-    transaction: async (_mode, _tables, fn) => fn(),
-    notifications: {
-      get: async (id) => notificationRows.get(id),
-      add: async (notification) => {
-        notificationRows.set(notification.id, notification);
-      },
-      put: async (notification) => {
-        notificationRows.set(notification.id, notification);
-      },
-      where: (query) => ({
-        modify: async (changes) => {
-          for (const [id, notification] of notificationRows) {
-            const matchesId = !query.id || notification.id === query.id;
-            const matchesSubscription = !query.subscriptionId || notification.subscriptionId === query.subscriptionId;
-            if (matchesId && matchesSubscription) {
-              notificationRows.set(id, { ...notification, ...changes });
-            }
-          }
-        },
-        toArray: async () =>
-          Array.from(notificationRows.values()).filter((notification) =>
-            Object.entries(query).every(([key, value]) => notification[key] === value),
-          ),
-      }),
-      bulkGet: async (ids) => ids.map((id) => notificationRows.get(id)),
-      bulkPut: async (notifications) => {
-        notifications.forEach((notification) => notificationRows.set(notification.id, notification));
-      },
-    },
     subscriptions: {
       get: async (id) => rows.get(id),
       put: async (sub) => {
@@ -71,152 +39,7 @@ const fakeDb = () => {
 const baseUrl = "https://ntfy.sh";
 
 beforeEach(() => {
-  vi.clearAllMocks();
   vi.spyOn(console, "log").mockImplementation(() => {});
-  vi.spyOn(console, "error").mockImplementation(() => {});
-});
-
-const addNotification = (db, subscriptionId, notification) =>
-  db.notifications.add({ sequenceId: undefined, ...notification, subscriptionId });
-
-describe("SubscriptionManager.markNotificationsRead", () => {
-  const subscriptionId = `${baseUrl}/mytopic`;
-
-  it("marks every unread notification read and returns the affected sequence IDs", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
-    await addNotification(db, subscriptionId, { id: "id1", sequenceId: "seq1", new: 1, time: 1 });
-    await addNotification(db, subscriptionId, { id: "id2", sequenceId: "seq2", new: 1, time: 2 });
-    await addNotification(db, subscriptionId, { id: "id3", sequenceId: "seq3", new: 0, time: 3 }); // already read
-
-    const sequenceIds = await manager.markNotificationsRead(subscriptionId);
-
-    expect(sequenceIds.sort()).toEqual(["seq1", "seq2"]); // only what actually changed
-    expect((await db.notifications.get("id1")).new).toBe(0);
-    expect((await db.notifications.get("id2")).new).toBe(0);
-    expect((await db.notifications.get("id3")).new).toBe(0);
-  });
-
-  it("falls back to the message ID for notifications without a stored sequence ID", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
-    await addNotification(db, subscriptionId, { id: "legacy1", new: 1, time: 1 });
-
-    expect(await manager.markNotificationsRead(subscriptionId)).toEqual(["legacy1"]);
-  });
-
-  it("returns an empty list when there is nothing to do", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
-
-    expect(await manager.markNotificationsRead(subscriptionId)).toEqual([]);
-  });
-});
-
-describe("SubscriptionManager.syncNotificationsRead", () => {
-  const subscriptionId = `${baseUrl}/mytopic`;
-
-  it("publishes the sequence IDs so the other devices see the same read state", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
-    api.clearMessages.mockResolvedValue(0);
-
-    await manager.syncNotificationsRead(subscriptionId, ["seq1", "seq2"]);
-
-    expect(api.clearMessages).toHaveBeenCalledWith(baseUrl, "mytopic", ["seq1", "seq2"]);
-  });
-
-  it("swallows server errors -- the local read state stands either way", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
-    api.clearMessages.mockRejectedValue(new Error("offline"));
-
-    await expect(manager.syncNotificationsRead(subscriptionId, ["seq1"])).resolves.toBeUndefined();
-  });
-
-  it("does nothing for an unknown subscription or an empty list", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.syncNotificationsRead("https://ntfy.sh/unknown", ["seq1"]);
-    await manager.syncNotificationsRead(`${baseUrl}/mytopic`, []);
-    expect(api.clearMessages).not.toHaveBeenCalled();
-  });
-});
-
-describe("SubscriptionManager.markNotificationReadAndSync", () => {
-  const subscriptionId = `${baseUrl}/mytopic`;
-
-  it("syncs a single notification and then marks it read locally", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
-    await addNotification(db, subscriptionId, { id: "id1", sequenceId: "seq1", new: 1, time: 1 });
-    api.clearMessages.mockResolvedValue(0);
-
-    await manager.markNotificationReadAndSync({ id: "id1", sequenceId: "seq1", subscriptionId });
-
-    expect(api.clearMessages).toHaveBeenCalledWith(baseUrl, "mytopic", ["seq1"]);
-    expect((await db.notifications.get("id1")).new).toBe(0);
-  });
-
-  it("still marks read locally when publishing the read state fails", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
-    await addNotification(db, subscriptionId, { id: "id1", sequenceId: "seq1", new: 1, time: 1 });
-    api.clearMessages.mockRejectedValue(new Error("no write permission"));
-
-    await manager.markNotificationReadAndSync({ id: "id1", sequenceId: "seq1", subscriptionId });
-
-    expect((await db.notifications.get("id1")).new).toBe(0);
-  });
-});
-
-describe("SubscriptionManager.markAllNotificationsRead", () => {
-  const subscriptionId = `${baseUrl}/mytopic`;
-
-  it("marks everything read locally, publishes the read state, and returns the count", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
-    await addNotification(db, subscriptionId, { id: "id1", sequenceId: "seq1", new: 1, time: 1 });
-    await addNotification(db, subscriptionId, { id: "id2", sequenceId: "seq2", new: 1, time: 2 });
-    await addNotification(db, subscriptionId, { id: "id3", sequenceId: "seq3", new: 0, time: 3 });
-    api.clearMessages.mockResolvedValue(0);
-
-    const count = await manager.markAllNotificationsRead(subscriptionId);
-
-    expect(count).toBe(2);
-    expect(api.clearMessages).toHaveBeenCalledWith(baseUrl, "mytopic", ["seq1", "seq2"]);
-    expect((await db.notifications.get("id1")).new).toBe(0);
-    expect((await db.notifications.get("id2")).new).toBe(0);
-  });
-
-  it("returns 0 and does not call the server when nothing is unread", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
-    await addNotification(db, subscriptionId, { id: "id1", sequenceId: "seq1", new: 0, time: 1 });
-
-    expect(await manager.markAllNotificationsRead(subscriptionId)).toBe(0);
-    expect(api.clearMessages).not.toHaveBeenCalled();
-  });
-
-  it("keeps the local read state when publishing fails", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
-    await addNotification(db, subscriptionId, { id: "id1", sequenceId: "seq1", new: 1, time: 1 });
-    api.clearMessages.mockRejectedValue(new Error("no write permission"));
-
-    expect(await manager.markAllNotificationsRead(subscriptionId)).toBe(1);
-    expect((await db.notifications.get("id1")).new).toBe(0);
-  });
 });
 
 describe("SubscriptionManager.upsert", () => {
@@ -288,36 +111,128 @@ describe("SubscriptionManager.syncFromRemote", () => {
   });
 });
 
+// The notification paths depend on Dexie transactions and indexes, so they run against the real
+// schema on an in-memory IndexedDB (fake-indexeddb), wiped before each test
+const realDb = async () => {
+  await createDb().delete();
+  return createDb();
+};
+
+const message = (id, fields = {}) => ({ id, time: 1700000000, event: "message", topic: "mytopic", message: `message ${id}`, ...fields });
+
+const subscriptionId = "https://ntfy.sh/mytopic";
+
+const setup = async () => {
+  const db = await realDb();
+  const manager = new SubscriptionManager(db);
+  await manager.upsert(baseUrl, "mytopic");
+  return { db, manager };
+};
+
 describe("SubscriptionManager.addNotification", () => {
-  const subscriptionId = `${baseUrl}/mytopic`;
-  const message = { id: "abc123", time: 123, event: "message" };
+  it("stores a new message as unread and remembers it as the last one", async () => {
+    const { db, manager } = await setup();
 
-  it("adds a genuinely new notification as unread", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
+    expect(await manager.addNotification(subscriptionId, message("m1", { sequence_id: "s1" }))).toBe(true);
 
-    const added = await manager.addNotification(subscriptionId, message);
-
-    expect(added).toBe(true);
-    expect(db.rows.get(subscriptionId).last).toBe("abc123");
-    const stored = await db.notifications.get("abc123");
-    expect(stored.new).toBe(1);
+    expect(await db.notifications.get("m1")).toMatchObject({ subscriptionId, sequenceId: "s1", new: 1, message: "message m1" });
+    expect((await db.subscriptions.get(subscriptionId)).last).toBe("m1");
   });
 
-  it("keeps an already-read notification read when the server re-sends it", async () => {
-    const db = fakeDb();
-    const manager = new SubscriptionManager(db);
-    await manager.upsert(baseUrl, "mytopic");
+  it("uses the message ID as sequence ID if there is none", async () => {
+    const { db, manager } = await setup();
+    await manager.addNotification(subscriptionId, message("m1"));
+    expect((await db.notifications.get("m1")).sequenceId).toBe("m1");
+  });
 
-    await manager.addNotification(subscriptionId, message);
-    await manager.markNotificationRead("abc123");
-    expect((await db.notifications.get("abc123")).new).toBe(0);
+  it("leaves a stored message untouched and returns false", async () => {
+    const { db, manager } = await setup();
+    await manager.addNotification(subscriptionId, message("m1"));
+    await manager.markNotificationRead("m1");
+    await manager.addNotification(subscriptionId, message("m2"));
 
-    // Server re-sends the same cached message (e.g. after a refresh/reconnect).
-    const added = await manager.addNotification(subscriptionId, message);
+    // Delivered again, e.g. by a second tab or a reconnect
+    expect(await manager.addNotification(subscriptionId, message("m1", { message: "changed" }))).toBe(false);
 
-    expect(added).toBe(false); // Must not re-trigger a notification
-    expect((await db.notifications.get("abc123")).new).toBe(0); // Read state preserved
+    expect(await db.notifications.get("m1")).toMatchObject({ new: 0, message: "message m1" });
+    // The fork also moves the last-seen marker on a re-sent message, so a reconnect does not
+    // replay what is already stored
+    expect((await db.subscriptions.get(subscriptionId)).last).toBe("m1");
+  });
+
+  it("does not store delete and clear events", async () => {
+    const { db, manager } = await setup();
+    expect(await manager.addNotification(subscriptionId, message("d1", { event: "message_delete", sequence_id: "s1" }))).toBe(false);
+    expect(await manager.addNotification(subscriptionId, message("c1", { event: "message_clear", sequence_id: "s1" }))).toBe(false);
+    expect(await db.notifications.count()).toBe(0);
+    expect((await db.subscriptions.get(subscriptionId)).last).toBeNull();
+  });
+
+  it("adds a message delivered twice at the same time only once", async () => {
+    const { db, manager } = await setup();
+    const results = await Promise.all([
+      manager.addNotification(subscriptionId, message("m1")),
+      manager.addNotification(subscriptionId, message("m1")),
+    ]);
+    expect(results.sort()).toEqual([false, true]);
+    expect(await db.notifications.count()).toBe(1);
+  });
+});
+
+describe("SubscriptionManager.addNotifications", () => {
+  it("stores polled messages as read and remembers the last one", async () => {
+    const { db, manager } = await setup();
+
+    await manager.addNotifications(subscriptionId, [message("m1"), message("m2", { sequence_id: "s2" })]);
+
+    const stored = await db.notifications.toArray();
+    // The fork stores polled messages with an explicit new: 0 (read), see addNotifications
+    expect(stored.map((n) => [n.id, n.sequenceId, n.subscriptionId, n.new])).toEqual([
+      ["m1", "m1", subscriptionId, 0],
+      ["m2", "s2", subscriptionId, 0],
+    ]);
+    expect((await db.subscriptions.get(subscriptionId)).last).toBe("m2");
+  });
+
+  it("keeps the local state of messages that are already stored", async () => {
+    const { db, manager } = await setup();
+    await manager.addNotification(subscriptionId, message("unread"));
+    await manager.addNotification(subscriptionId, message("read"));
+    await manager.markNotificationRead("read");
+    const pinged = message("pinged", { actions: [{ id: "a1", action: "http", label: "Ping" }] });
+    await manager.addNotification(subscriptionId, pinged);
+    await manager.updateNotification({ ...(await db.notifications.get("pinged")), actions: [{ ...pinged.actions[0], progress: 2 }] });
+
+    // A poll returns all of them again, plus one that is new
+    await manager.addNotifications(subscriptionId, [message("unread"), message("read"), pinged, message("polled")]);
+
+    expect((await db.notifications.get("unread")).new).toBe(1);
+    expect((await db.notifications.get("read")).new).toBe(0);
+    expect((await db.notifications.get("pinged")).actions[0].progress).toBe(2);
+    expect(await db.notifications.get("polled")).toMatchObject({ subscriptionId, sequenceId: "polled" });
+    expect((await db.subscriptions.get(subscriptionId)).last).toBe("polled");
+  });
+
+  it("replaces an older version of the same sequence, keeping it unread", async () => {
+    const { db, manager } = await setup();
+    await manager.addNotification(subscriptionId, message("m1", { sequence_id: "s1", message: "Downloading" }));
+    await manager.addNotification(subscriptionId, message("o1", { sequence_id: "other", message: "Other" }));
+
+    // The WebSocket missed the update, so only the poll sees it
+    await manager.addNotifications(subscriptionId, [message("m2", { sequence_id: "s1", message: "Download complete", time: 1700000001 })]);
+
+    const versions = await db.notifications.where({ subscriptionId, sequenceId: "s1" }).toArray();
+    expect(versions.map((n) => [n.message, n.new])).toEqual([["Download complete", 1]]);
+    expect(await db.notifications.get("o1")).toBeDefined();
+  });
+
+  it("does not replace a newer version of the same sequence", async () => {
+    const { db, manager } = await setup();
+    await manager.addNotification(subscriptionId, message("m2", { sequence_id: "s1", message: "Download complete", time: 1700000001 }));
+
+    // The poll fetched the old version just before the update arrived via WebSocket
+    await manager.addNotifications(subscriptionId, [message("m1", { sequence_id: "s1", message: "Downloading" })]);
+
+    expect((await db.notifications.toArray()).map((n) => n.message)).toEqual(["Download complete"]);
   });
 });
