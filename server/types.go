@@ -497,22 +497,22 @@ type webManifestResponse struct {
 }
 
 type webManifestIcon struct {
-	SRC    string `json:"src"`
-	Sizes  string `json:"sizes"`
-	Type   string `json:"type"`
+	SRC     string `json:"src"`
+	Sizes   string `json:"sizes"`
+	Type    string `json:"type"`
 	Purpose string `json:"purpose,omitempty"`
 }
 
 type webManifestScreenshot struct {
-	SRC    string `json:"src"`
-	Sizes  string `json:"sizes"`
-	Type   string `json:"type"`
-	Form   string `json:"form"`
-	Label  string `json:"label"`
+	SRC   string `json:"src"`
+	Sizes string `json:"sizes"`
+	Type  string `json:"type"`
+	Form  string `json:"form"`
+	Label string `json:"label"`
 }
 
 type webManifestShortcut struct {
-	Name   string                `json:"name"`
-	URL    string                `json:"url"`
-	Icons  []*webManifestIcon    `json:"icons,omitempty"`
+	Name  string             `json:"name"`
+	URL   string             `json:"url"`
+	Icons []*webManifestIcon `json:"icons,omitempty"`
 }

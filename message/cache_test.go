@@ -1395,4 +1395,3 @@ func TestStore_DeleteMessagesForTopic(t *testing.T) {
 		require.Len(t, ids, 0)
 	})
 }
-

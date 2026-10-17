@@ -372,7 +372,7 @@ func TestStoreTouchSubscriptions(t *testing.T) {
 		require.Len(t, subs, 0)
 
 		// ... and therefore keeps it alive through the pruning pass.
-		require.Nil(t, store.RemoveExpiredSubscriptions(60 * 24 * time.Hour))
+		require.Nil(t, store.RemoveExpiredSubscriptions(60*24*time.Hour))
 		subs, err = store.SubscriptionsForTopic("topic1")
 		require.Nil(t, err)
 		require.Len(t, subs, 1)

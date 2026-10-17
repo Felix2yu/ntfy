@@ -74,8 +74,8 @@ const (
 	DefaultTotalTopicLimit             = 15000
 	DefaultAttachmentTotalSizeLimit    = int64(5 * 1024 * 1024 * 1024) // 5 GB
 	DefaultAttachmentFileSizeLimit     = int64(15 * 1024 * 1024)       // 15 MB
-	DefaultAttachmentExpiryDuration    = 0 // 0 = infinite retention, attachments never expire
-	DefaultAttachmentOrphanGracePeriod = time.Hour // Don't delete orphaned objects younger than this to avoid races with in-flight uploads
+	DefaultAttachmentExpiryDuration    = 0                             // 0 = infinite retention, attachments never expire
+	DefaultAttachmentOrphanGracePeriod = time.Hour                     // Don't delete orphaned objects younger than this to avoid races with in-flight uploads
 
 	// DefaultMessagePollSizeLimit caps what one cache replay returns per topic. It is a backstop
 	// against a single request materializing an entire topic cache, not a tunable: on ntfy.sh it

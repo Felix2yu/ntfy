@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"math"
 	"context"
 	"crypto/sha256"
 	"embed"
@@ -11,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/pprof"
