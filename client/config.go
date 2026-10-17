@@ -1,9 +1,10 @@
 package client
 
 import (
+	"os"
+
 	"gopkg.in/yaml.v2"
 	"heckel.io/ntfy/v2/log"
-	"os"
 )
 
 const (

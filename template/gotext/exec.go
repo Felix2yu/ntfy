@@ -303,8 +303,8 @@ func (t *Template) DefinedTemplates() string {
 
 // Sentinel errors for use with panic to signal early exits from range loops.
 var (
-	walkBreak    = errors.New("break")
-	walkContinue = errors.New("continue")
+	errWalkBreak    = errors.New("break")
+	errWalkContinue = errors.New("continue")
 )
 
 // Walk functions step through the major pieces of the template structure,
@@ -326,10 +326,10 @@ func (s *state) walk(dot reflect.Value, node parse.Node) {
 			s.printValue(node, val)
 		}
 	case *parse.BreakNode:
-		panic(walkBreak)
+		panic(errWalkBreak)
 	case *parse.CommentNode:
 	case *parse.ContinueNode:
-		panic(walkContinue)
+		panic(errWalkContinue)
 	case *parse.IfNode:
 		s.walkIfOrWith(parse.NodeIf, dot, node.Pipe, node.List, node.ElseList)
 	case *parse.ListNode:
@@ -409,7 +409,7 @@ func isTrue(val reflect.Value) (truth, ok bool) {
 func (s *state) walkRange(dot reflect.Value, r *parse.RangeNode) {
 	s.at(r)
 	defer func() {
-		if r := recover(); r != nil && r != walkBreak {
+		if r := recover(); r != nil && r != errWalkBreak {
 			panic(r)
 		}
 	}()
@@ -444,8 +444,8 @@ func (s *state) walkRange(dot reflect.Value, r *parse.RangeNode) {
 		}
 		defer s.pop(mark)
 		defer func() {
-			// Consume panic(walkContinue)
-			if r := recover(); r != nil && r != walkContinue {
+			// Consume panic(errWalkContinue)
+			if r := recover(); r != nil && r != errWalkContinue {
 				panic(r)
 			}
 		}()

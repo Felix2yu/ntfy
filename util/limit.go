@@ -2,11 +2,12 @@ package util
 
 import (
 	"errors"
-	"golang.org/x/time/rate"
 	"io"
 	"math"
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // ErrLimitReached is the error returned by the Limiter and LimitWriter when the predefined limit has been reached

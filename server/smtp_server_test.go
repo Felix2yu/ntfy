@@ -2,14 +2,15 @@ package server
 
 import (
 	"bufio"
-	"github.com/emersion/go-smtp"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/emersion/go-smtp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSmtpBackend_Multipart(t *testing.T) {

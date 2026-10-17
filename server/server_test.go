@@ -2744,7 +2744,7 @@ func TestServer_PublishAttachmentAndExpire(t *testing.T) {
 		require.Nil(t, os.Chtimes(file, time.Now().Add(-2*time.Hour), time.Now().Add(-2*time.Hour)))
 		waitFor(t, func() bool {
 			s.execManager()
-			s.attachment.Sync() // File cleanup is done by sync, not by the manager
+			_ = s.attachment.Sync() // File cleanup is done by sync, not by the manager
 			return !util.FileExists(file)
 		})
 		response = request(t, s, "GET", path, "", nil)
@@ -5857,7 +5857,10 @@ func TestServer_RunDoesNotStartListenersAfterStop(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- s.Run() }()
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned error after Stop: %v", err)
+		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Run did not return after Stop")
 	}

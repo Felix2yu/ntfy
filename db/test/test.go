@@ -45,7 +45,7 @@ func CreateTestPostgresSchema(t testing.TB) string {
 	t.Cleanup(func() {
 		cleanHost, err := pg.Open(dsn)
 		if err == nil {
-			cleanHost.DB.Exec(fmt.Sprintf("DROP SCHEMA %s CASCADE", schema))
+			_, _ = cleanHost.DB.Exec(fmt.Sprintf("DROP SCHEMA %s CASCADE", schema))
 			cleanHost.DB.Close()
 		}
 	})
@@ -145,7 +145,7 @@ func (p *LatencyProxy) proxy(client net.Conn, upstream string) {
 	}
 	defer server.Close()
 	go func() {
-		io.Copy(client, server)
+		_, _ = io.Copy(client, server)
 		client.Close()
 	}()
 	buf := make([]byte, 64*1024)

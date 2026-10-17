@@ -1,10 +1,11 @@
 package client_test
 
 import (
-	"github.com/stretchr/testify/require"
-	"heckel.io/ntfy/v2/client"
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"heckel.io/ntfy/v2/client"
 )
 
 func TestWithHeader_PlainValueUnchanged(t *testing.T) {

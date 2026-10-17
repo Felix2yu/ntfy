@@ -237,7 +237,7 @@ func execImport(c *cli.Context) error {
 	fmt.Print("Make sure ntfy is not running. Continue? (y/n): ")
 
 	var answer string
-	fmt.Scanln(&answer)
+	_, _ = fmt.Scanln(&answer)
 	if strings.TrimSpace(strings.ToLower(answer)) != "y" {
 		fmt.Println("Aborted.")
 		return nil
@@ -324,7 +324,7 @@ func execPreImport(c *cli.Context, databaseURL, cacheFile string) error {
 	fmt.Print("Continue? (y/n): ")
 
 	var answer string
-	fmt.Scanln(&answer)
+	_, _ = fmt.Scanln(&answer)
 	if strings.TrimSpace(strings.ToLower(answer)) != "y" {
 		fmt.Println("Aborted.")
 		return nil

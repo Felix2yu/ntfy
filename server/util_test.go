@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"crypto/rand"
 	"fmt"
-	"heckel.io/ntfy/v2/user"
 	"net/http"
 	"net/netip"
 	"strings"
 	"testing"
+
+	"heckel.io/ntfy/v2/user"
 
 	"github.com/stretchr/testify/require"
 )

@@ -349,7 +349,7 @@ func TestMesh_SubscriberCancelBroadcast(t *testing.T) {
 	require.Nil(t, err)
 	defer meshB.Close()
 	srvB := &http.Server{Handler: meshB}
-	go srvB.Serve(listenerB)
+	go func() { _ = srvB.Serve(listenerB) }()
 	defer srvB.Close()
 
 	confA := newTestMeshConfig("node-a", "http://127.0.0.1:1")
@@ -437,7 +437,7 @@ func TestMesh_TopicAnnouncementInvokesTopicsAddedFunc(t *testing.T) {
 	require.Nil(t, err)
 	defer meshB.Close()
 	srvB := &http.Server{Handler: meshB}
-	go srvB.Serve(listenerB)
+	go func() { _ = srvB.Serve(listenerB) }()
 	defer srvB.Close()
 
 	meshA, err := newMeshCluster(newTestMeshConfig("node-a", "http://127.0.0.1:1"), poolA, nil)

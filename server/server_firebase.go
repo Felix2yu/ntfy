@@ -6,14 +6,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
+
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
-	"fmt"
 	"google.golang.org/api/option"
 	"heckel.io/ntfy/v2/model"
 	"heckel.io/ntfy/v2/user"
 	"heckel.io/ntfy/v2/util"
-	"strings"
 )
 
 const (

@@ -211,7 +211,7 @@ func TestServer_Cluster_ActiveWithPassivePeer(t *testing.T) {
 		conf.ClusterRole = role
 		s := newTestServer(t, conf)
 		srv := &http.Server{Handler: s.cluster}
-		go srv.Serve(listener)
+		go func() { _ = srv.Serve(listener) }()
 		t.Cleanup(func() { srv.Close() })
 		return s
 	}
@@ -265,7 +265,7 @@ func TestServer_Cluster_EndToEnd(t *testing.T) {
 	confB.ClusterAdvertiseURL = "http://" + listenerB.Addr().String()
 	sB := newTestServer(t, confB)
 	srvB := &http.Server{Handler: sB.cluster}
-	go srvB.Serve(listenerB)
+	go func() { _ = srvB.Serve(listenerB) }()
 	defer srvB.Close()
 	// Node A: publish-only in this test, so its advertise URL is never called
 	confA := newTestConfig(t, schemaDSN)

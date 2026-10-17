@@ -4,14 +4,6 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v74"
-	"golang.org/x/time/rate"
-	"heckel.io/ntfy/v2/model"
-	"heckel.io/ntfy/v2/payments"
-	"heckel.io/ntfy/v2/user"
-	"heckel.io/ntfy/v2/util"
 	"io"
 	"net/netip"
 	"os"
@@ -20,6 +12,15 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"github.com/stripe/stripe-go/v74"
+	"golang.org/x/time/rate"
+	"heckel.io/ntfy/v2/model"
+	"heckel.io/ntfy/v2/payments"
+	"heckel.io/ntfy/v2/user"
+	"heckel.io/ntfy/v2/util"
 )
 
 func TestPayments_Tiers(t *testing.T) {
@@ -553,11 +554,11 @@ func TestPayments_Webhook_Subscription_Updated_Downgrade_From_PastDue_To_Active(
 		// Verify that messages and attachments were deleted. We backdate the
 		// attachment files so sync's grace period doesn't protect them.
 		past := time.Now().Add(-2 * time.Hour)
-		os.Chtimes(filepath.Join(s.config.AttachmentCacheDir, a2.ID), past, past)
-		os.Chtimes(filepath.Join(s.config.AttachmentCacheDir, z2.ID), past, past)
+		_ = os.Chtimes(filepath.Join(s.config.AttachmentCacheDir, a2.ID), past, past)
+		_ = os.Chtimes(filepath.Join(s.config.AttachmentCacheDir, z2.ID), past, past)
 		time.Sleep(time.Second)
 		s.execManager()
-		s.attachment.Sync() // File cleanup is done by sync, not by the manager
+		_ = s.attachment.Sync() // File cleanup is done by sync, not by the manager
 
 		ms, err := s.messageCache.Messages("atopic", model.SinceAllMessages, false)
 		require.Nil(t, err)

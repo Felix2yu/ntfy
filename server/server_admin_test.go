@@ -2,12 +2,13 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/stretchr/testify/require"
-	"heckel.io/ntfy/v2/user"
-	"heckel.io/ntfy/v2/util"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"heckel.io/ntfy/v2/user"
+	"heckel.io/ntfy/v2/util"
 )
 
 func TestVersion_Admin(t *testing.T) {

@@ -6,6 +6,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/netip"
+	"time"
+
 	"github.com/stripe/stripe-go/v74"
 	portalsession "github.com/stripe/stripe-go/v74/billingportal/session"
 	"github.com/stripe/stripe-go/v74/checkout/session"
@@ -17,10 +22,6 @@ import (
 	"heckel.io/ntfy/v2/payments"
 	"heckel.io/ntfy/v2/user"
 	"heckel.io/ntfy/v2/util"
-	"io"
-	"net/http"
-	"net/netip"
-	"time"
 )
 
 // Payments in ntfy are done via Stripe.

@@ -166,11 +166,13 @@ func (a *Manager) Authenticate(identifier, password string) (*User, error) {
 	user, err := a.userByNameOrEmail(identifier)
 	if err != nil {
 		log.Tag(tag).Field("user_name", identifier).Err(err).Trace("Authentication of user failed (1)")
-		bcrypt.CompareHashAndPassword([]byte(userAuthIntentionalSlowDownHash), []byte("intentional slow-down to avoid timing attacks"))
+		// 故意做一次等价耗时的 bcrypt 比对，抹平「用户不存在」与「密码错误」的时序差异
+		_ = bcrypt.CompareHashAndPassword([]byte(userAuthIntentionalSlowDownHash), []byte("intentional slow-down to avoid timing attacks"))
 		return nil, ErrUnauthenticated
 	} else if user.Deleted {
 		log.Tag(tag).Field("user_name", identifier).Trace("Authentication of user failed (2): user marked deleted")
-		bcrypt.CompareHashAndPassword([]byte(userAuthIntentionalSlowDownHash), []byte("intentional slow-down to avoid timing attacks"))
+		// 故意做一次等价耗时的 bcrypt 比对，抹平「用户不存在」与「密码错误」的时序差异
+		_ = bcrypt.CompareHashAndPassword([]byte(userAuthIntentionalSlowDownHash), []byte("intentional slow-down to avoid timing attacks"))
 		return nil, ErrUnauthenticated
 	} else if err := bcrypt.CompareHashAndPassword([]byte(user.Hash), []byte(password)); err != nil {
 		log.Tag(tag).Field("user_name", identifier).Err(err).Trace("Authentication of user failed (3)")

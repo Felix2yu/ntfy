@@ -9,7 +9,7 @@ import (
 func main() {
 	// Without additional headers (priority, tags, title), it's a one liner.
 	// Check out https://ntfy.sh/mytopic in your browser after running this.
-	http.Post("https://ntfy.sh/mytopic", "text/plain", strings.NewReader("Backup successful 😀"))
+	_, _ = http.Post("https://ntfy.sh/mytopic", "text/plain", strings.NewReader("Backup successful 😀"))
 
 	// If you'd like to add title, priority, or tags, it's a little harder.
 	// Check out https://ntfy.sh/phil_alerts in your browser.

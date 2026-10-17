@@ -1,9 +1,10 @@
 package user
 
 import (
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAllowedRole(t *testing.T) {

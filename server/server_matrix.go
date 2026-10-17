@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"heckel.io/ntfy/v2/util"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"heckel.io/ntfy/v2/util"
 )
 
 // Matrix Push Gateway / UnifiedPush / ntfy integration:

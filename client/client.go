@@ -7,14 +7,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"heckel.io/ntfy/v2/log"
-	"heckel.io/ntfy/v2/util"
 	"io"
 	"net/http"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"heckel.io/ntfy/v2/log"
+	"heckel.io/ntfy/v2/util"
 )
 
 const (

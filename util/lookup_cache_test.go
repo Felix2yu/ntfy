@@ -2,9 +2,10 @@ package util
 
 import (
 	"errors"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestLookupCache_Success(t *testing.T) {

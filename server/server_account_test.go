@@ -2,11 +2,6 @@ package server
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
-	"heckel.io/ntfy/v2/log"
-	"heckel.io/ntfy/v2/model"
-	"heckel.io/ntfy/v2/user"
-	"heckel.io/ntfy/v2/util"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +11,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"heckel.io/ntfy/v2/log"
+	"heckel.io/ntfy/v2/model"
+	"heckel.io/ntfy/v2/user"
+	"heckel.io/ntfy/v2/util"
 )
 
 func TestAccount_Signup_Success(t *testing.T) {
@@ -822,10 +823,10 @@ func TestAccount_Reservation_Delete_Messages_And_Attachments(t *testing.T) {
 		// This does not explicitly call the manager! We backdate the files so sync's
 		// grace period doesn't protect them.
 		past := time.Now().Add(-2 * time.Hour)
-		os.Chtimes(filepath.Join(s.config.AttachmentCacheDir, m1.ID), past, past)
-		os.Chtimes(filepath.Join(s.config.AttachmentCacheDir, m2.ID), past, past)
+		_ = os.Chtimes(filepath.Join(s.config.AttachmentCacheDir, m1.ID), past, past)
+		_ = os.Chtimes(filepath.Join(s.config.AttachmentCacheDir, m2.ID), past, past)
 		waitFor(t, func() bool {
-			s.attachment.Sync() // File cleanup is done by sync, not by the manager
+			_ = s.attachment.Sync() // File cleanup is done by sync, not by the manager
 			ms, err := s.messageCache.Messages("mytopic1", model.SinceAllMessages, false)
 			require.Nil(t, err)
 			return len(ms) == 0 && !util.FileExists(filepath.Join(s.config.AttachmentCacheDir, m1.ID))

@@ -338,7 +338,7 @@ func forEachBackend(t *testing.T, totalSizeLimit int64, f func(t *testing.T, s *
 		dir, s := newTestFileStore(t, totalSizeLimit)
 		makeOld := func(id string) {
 			oldTime := time.Unix(1, 0)
-			os.Chtimes(filepath.Join(dir, id), oldTime, oldTime)
+			_ = os.Chtimes(filepath.Join(dir, id), oldTime, oldTime)
 		}
 		f(t, s, makeOld)
 	})

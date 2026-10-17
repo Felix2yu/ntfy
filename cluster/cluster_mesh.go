@@ -170,7 +170,11 @@ func (c *meshCluster) BroadcastState(state *State) {
 	}
 	log.Tag(tag).Debug("Broadcasting state (%d new topics, %d cancels) to %d peer(s)", len(state.AddedTopics), len(state.SubscriberCancels), len(peers))
 	for _, p := range peers {
-		go c.postToPeer(NodeID(p.NodeID), stateURL(p.AdvertiseURL), contentTypeJSON, body)
+		go func(peerID NodeID, url string) {
+			if err := c.postToPeer(peerID, url, contentTypeJSON, body); err != nil {
+				log.Tag(tag).Field("peer", peerID).Err(err).Debug("Broadcasting state to peer failed")
+			}
+		}(NodeID(p.NodeID), stateURL(p.AdvertiseURL))
 	}
 }
 
