@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"heckel.io/ntfy/v2/model"
-	"heckel.io/ntfy/v2/user"
 	"net/netip"
 	"strings"
 	"sync"
 	"testing"
+
+	"heckel.io/ntfy/v2/model"
+	"heckel.io/ntfy/v2/user"
 
 	"firebase.google.com/go/v4/messaging"
 	"github.com/stretchr/testify/require"

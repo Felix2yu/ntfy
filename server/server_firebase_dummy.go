@@ -4,6 +4,7 @@ package server
 
 import (
 	"errors"
+
 	"heckel.io/ntfy/v2/model"
 	"heckel.io/ntfy/v2/user"
 )

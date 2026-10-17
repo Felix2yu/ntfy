@@ -2,11 +2,12 @@ package client
 
 import (
 	"fmt"
-	"heckel.io/ntfy/v2/util"
 	"mime"
 	"net/http"
 	"strings"
 	"time"
+
+	"heckel.io/ntfy/v2/util"
 )
 
 // RequestOption is a generic request option that can be added to Client calls

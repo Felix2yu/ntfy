@@ -1,11 +1,12 @@
 package client_test
 
 import (
-	"github.com/stretchr/testify/require"
-	"heckel.io/ntfy/v2/client"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"heckel.io/ntfy/v2/client"
 )
 
 func TestConfig_Load(t *testing.T) {

@@ -3,13 +3,14 @@ package log
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/stretchr/testify/require"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {

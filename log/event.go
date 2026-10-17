@@ -3,12 +3,13 @@ package log
 import (
 	"encoding/json"
 	"fmt"
-	"heckel.io/ntfy/v2/util"
 	"log"
 	"os"
 	"sort"
 	"strings"
 	"time"
+
+	"heckel.io/ntfy/v2/util"
 )
 
 const (

@@ -4,11 +4,12 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"fmt"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // base64encode encodes a string to base64 using standard encoding.

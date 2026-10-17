@@ -2,15 +2,16 @@ package client_test
 
 import (
 	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/stretchr/testify/require"
 	"heckel.io/ntfy/v2/client"
 	"heckel.io/ntfy/v2/log"
 	"heckel.io/ntfy/v2/server"
 	"heckel.io/ntfy/v2/test"
-	"os"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestMain(m *testing.M) {

@@ -2,8 +2,9 @@ package server
 
 import (
 	"errors"
-	"heckel.io/ntfy/v2/user"
 	"net/http"
+
+	"heckel.io/ntfy/v2/user"
 )
 
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request, v *visitor) error {

@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v2"
 	"heckel.io/ntfy/v2/server"
 	"heckel.io/ntfy/v2/test"
-	"testing"
 )
 
 func TestCLI_Access_Show(t *testing.T) {

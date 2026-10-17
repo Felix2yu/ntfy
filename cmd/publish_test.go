@@ -98,7 +98,7 @@ func TestCLI_Publish_Wait_PID_And_Cmd(t *testing.T) {
 	// Test: sleep 0.5
 	sleep := exec.Command("sleep", "0.5")
 	require.Nil(t, sleep.Start())
-	go sleep.Wait() // Must be called to release resources
+	go func() { _ = sleep.Wait() }() // Must be called to release resources
 	start := time.Now()
 	app, _, stdout, _ := newTestApp()
 	require.Nil(t, app.Run([]string{"ntfy", "publish", "--wait-pid", strconv.Itoa(sleep.Process.Pid), topic}))
@@ -146,7 +146,7 @@ func TestCLI_Publish_Wait_PID_And_Cmd(t *testing.T) {
 	// Test: Successful --wait-pid with NTFY_TOPIC
 	sleep = exec.Command("sleep", "0.2")
 	require.Nil(t, sleep.Start())
-	go sleep.Wait() // Must be called to release resources
+	go func() { _ = sleep.Wait() }() // Must be called to release resources
 	app, _, stdout, _ = newTestApp()
 	require.Nil(t, app.Run([]string{"ntfy", "publish", "--wait-pid", strconv.Itoa(sleep.Process.Pid)}))
 	m = toMessage(t, stdout.String())

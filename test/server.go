@@ -2,11 +2,12 @@ package test
 
 import (
 	"fmt"
-	"heckel.io/ntfy/v2/server"
 	"net"
 	"net/http"
 	"path/filepath"
 	"testing"
+
+	"heckel.io/ntfy/v2/server"
 )
 
 // StartServer starts a server.Server with a random port and waits for the server to be up
