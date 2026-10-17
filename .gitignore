@@ -22,3 +22,6 @@ cmd/key-file.yaml
 
 # MiMoCode
 .mimocode/
+
+# AI Agent 生成目录（本地会话记忆，不进版本库；完整块见 Felix2yu/.github docs/repo-baseline.md）
+.workbuddy/
