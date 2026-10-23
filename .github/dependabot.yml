@@ -84,7 +84,6 @@ updates:
       prefix: "chore"
     labels:
       - "dependencies"
-      - "ci"
     groups:
       all:
         patterns:
