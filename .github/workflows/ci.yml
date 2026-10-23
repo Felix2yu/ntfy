@@ -21,7 +21,9 @@ concurrency:
 
 jobs:
   test:
-    uses: Felix2yu/.github/.github/workflows/reusable-test.yml@v1
+    # pin 不可变 release tag（契约允许 @v1 或 @vX.Y.Z）：移动 tag @v1 在 Actions 侧解析滞后，
+    # 仍指向不含 web-lint-command 的旧提交，会让整个 workflow 直接 startup_failure。
+    uses: Felix2yu/.github/.github/workflows/reusable-test.yml@v1.4.0
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     with:
@@ -53,7 +55,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: Felix2yu/.github/.github/workflows/reusable-image.yml@v1
+    uses: Felix2yu/.github/.github/workflows/reusable-image.yml@v1.4.0
     with:
       go-dir: .
       binary-name: ntfy
@@ -81,7 +83,7 @@ jobs:
     if: github.event_name == 'release'
     permissions:
       contents: write
-    uses: Felix2yu/.github/.github/workflows/reusable-release.yml@v1
+    uses: Felix2yu/.github/.github/workflows/reusable-release.yml@v1.4.0
     with:
       go-dir: .
       binary-name: ntfy
