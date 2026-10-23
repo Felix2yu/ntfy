@@ -21,7 +21,9 @@ concurrency:
 
 jobs:
   test:
-    uses: Felix2yu/.github/.github/workflows/reusable-test.yml@v1
+    # pin 不可变 release tag（契约允许 @v1 或 @vX.Y.Z）：移动 tag @v1 在 Actions 侧解析滞后，
+    # 仍指向不含 web-lint-command 的旧提交，会让整个 workflow 直接 startup_failure。
+    uses: Felix2yu/.github/.github/workflows/reusable-test.yml@v1.4.0
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     with:
@@ -32,6 +34,9 @@ jobs:
       # go-sqlite3 需要这三个 tag，否则 sqlite 扩展与静态链接行为不同
       build-tags: sqlite_omit_load_extension osusergo netgo
       web-dir: web
+      # lint 纳入 CI：fork：沿用上游 lint = eslint --report-unused-disable-directives ./src/，实测 exit=0（9 条 warning）。
+      # 只有构建侧被验证过是不够的 —— typescript-eslint 对 TS 7 是加载期硬失败。
+      web-lint-command: pnpm run lint
       # server/embed 依赖两个 npm 之外的前置产物：mkdocs 文档站
       docs-command: |
         "$PYTHON" -m venv .venv-docs
@@ -50,7 +55,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: Felix2yu/.github/.github/workflows/reusable-image.yml@v1
+    uses: Felix2yu/.github/.github/workflows/reusable-image.yml@v1.4.0
     with:
       go-dir: .
       binary-name: ntfy
@@ -78,7 +83,7 @@ jobs:
     if: github.event_name == 'release'
     permissions:
       contents: write
-    uses: Felix2yu/.github/.github/workflows/reusable-release.yml@v1
+    uses: Felix2yu/.github/.github/workflows/reusable-release.yml@v1.4.0
     with:
       go-dir: .
       binary-name: ntfy
