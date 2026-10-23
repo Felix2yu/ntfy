@@ -32,6 +32,9 @@ jobs:
       # go-sqlite3 需要这三个 tag，否则 sqlite 扩展与静态链接行为不同
       build-tags: sqlite_omit_load_extension osusergo netgo
       web-dir: web
+      # lint 纳入 CI：fork：沿用上游 lint = eslint --report-unused-disable-directives ./src/，实测 exit=0（9 条 warning）。
+      # 只有构建侧被验证过是不够的 —— typescript-eslint 对 TS 7 是加载期硬失败。
+      web-lint-command: pnpm run lint
       # server/embed 依赖两个 npm 之外的前置产物：mkdocs 文档站
       docs-command: |
         "$PYTHON" -m venv .venv-docs
