@@ -104,7 +104,7 @@ var (
 	errHTTPBadRequestPriorityInvalid                 = &errHTTP{40007, http.StatusBadRequest, "invalid priority parameter", "https://ntfy.sh/docs/publish/#message-priority", nil}
 	errHTTPBadRequestSinceInvalid                    = &errHTTP{40008, http.StatusBadRequest, "invalid since parameter", "https://ntfy.sh/docs/subscribe/api/#fetch-cached-messages", nil}
 	errHTTPBadRequestTopicInvalid                    = &errHTTP{40009, http.StatusBadRequest, "invalid request: topic invalid", "", nil}
-	errHTTPBadRequestQueryMissing                    = &errHTTP{40010, http.StatusBadRequest, "invalid request: query parameter 'q' is required", "", nil}
+	errHTTPBadRequestQueryMissing                    = &errHTTP{40012, http.StatusBadRequest, "invalid request: query parameter 'q' is required", "", nil}
 	errHTTPBadRequestTopicDisallowed                 = &errHTTP{40010, http.StatusBadRequest, "invalid request: topic name is not allowed", "", nil}
 	errHTTPBadRequestMessageNotUTF8                  = &errHTTP{40011, http.StatusBadRequest, "invalid request: message must be UTF-8 encoded", "", nil}
 	errHTTPBadRequestAttachmentURLInvalid            = &errHTTP{40013, http.StatusBadRequest, "invalid request: attachment URL is invalid", "https://ntfy.sh/docs/publish/#attachments", nil}
@@ -185,5 +185,6 @@ var (
 	errHTTPInternalErrorInvalidPath                  = &errHTTP{50002, http.StatusInternalServerError, "internal server error: invalid path", "", nil}
 	errHTTPInternalErrorMissingBaseURL               = &errHTTP{50003, http.StatusInternalServerError, "internal server error: base-url must be be configured for this feature", "https://ntfy.sh/docs/config/", nil}
 	errHTTPInternalErrorWebPushUnableToPublish       = &errHTTP{50004, http.StatusInternalServerError, "internal server error: unable to publish web push message", "", nil}
+	errHTTPServiceUnavailableDraining                = &errHTTP{50301, http.StatusServiceUnavailable, "service unavailable: this node is shutting down, please reconnect", "", nil}
 	errHTTPInsufficientStorageUnifiedPush            = &errHTTP{50701, http.StatusInsufficientStorage, "cannot publish to UnifiedPush topic without previously active subscriber", "", nil}
 )
