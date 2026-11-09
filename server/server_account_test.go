@@ -143,6 +143,9 @@ func TestAccount_Signup_LimitReached(t *testing.T) {
 		rr := request(t, s, "POST", "/v1/account", `{"username":"thiswontwork", "password":"mypass"}`, nil)
 		require.Equal(t, 429, rr.Code)
 		require.Equal(t, 42906, toHTTPError(t, rr.Body.String()).Code)
+		retryAfter := retryAfterSeconds(t, rr) // One token refills per DefaultVisitorAccountCreationLimitReplenish
+		require.Greater(t, retryAfter, int(DefaultVisitorAccountCreationLimitReplenish.Seconds())-60)
+		require.LessOrEqual(t, retryAfter, int(DefaultVisitorAccountCreationLimitReplenish.Seconds()))
 	})
 }
 
@@ -935,25 +938,25 @@ func TestAccount_Reservation_Delete_Messages_And_Attachments(t *testing.T) {
 	require.Equal(t, int64(2), account.Stats.Messages) // Is not reset!
 }*/
 
-func TestAccount_TokenUpdate_NilUserRace_NoPanic(t *testing.T) {
+func TestAccount_TokenUpdate_NilUser_NoPanic(t *testing.T) {
 	forEachBackend(t, func(t *testing.T, databaseURL string) {
-		// Regression for the recurring production panic in handleAccountTokenUpdate: the
-		// handler re-reads v.User() after ensureUser already checked it, and a concurrent
-		// anonymous request on the same IP-keyed visitor can SetUser(nil) in between. The
-		// handler must return 401, not dereference a nil user.
+		// Regression for a recurring production panic in handleAccountTokenUpdate: the handler
+		// re-reads v.User() after ensureUser checked it, and must return 401 for a nil user, not
+		// dereference it. Visitors were shared between requests then (#1051).
 		conf := newTestConfigWithAuthFile(t, databaseURL)
 		conf.EnableLogin = true
 		s := newTestServer(t, conf)
+		ip := netip.MustParseAddr("9.9.9.9")
 		require.Nil(t, s.userManager.AddUser("phil", "phil12345", user.RoleUser, false))
 		u, err := s.userManager.User("phil")
 		require.Nil(t, err)
-
-		v := s.visitor(netip.MustParseAddr("9.9.9.9"), u)
-		v.SetUser(nil) // The concurrent anonymous request, made deterministic
+		authed := s.visitor(ip, u)
+		anon := s.visitor(ip, nil) // A concurrent anonymous request from the same IP
+		require.NotNil(t, authed.User())
 
 		r, _ := http.NewRequest("PATCH", "/v1/account/token", strings.NewReader("{}"))
 		rr := httptest.NewRecorder()
-		err = s.handleAccountTokenUpdate(rr, r, v)
+		err = s.handleAccountTokenUpdate(rr, r, anon)
 		require.Error(t, err)
 		httpErr, ok := err.(*errHTTP)
 		require.True(t, ok)
@@ -1022,7 +1025,7 @@ func newReservationTestNodes(t *testing.T, clustered bool, accessReloadInterval 
 		confB.ClusterAdvertiseURL = "http://" + listenerB.Addr().String()
 		sB = newTestServer(t, confB)
 		srvB := &http.Server{Handler: sB.cluster}
-		go srvB.Serve(listenerB)
+		go func() { _ = srvB.Serve(listenerB) }()
 		t.Cleanup(func() {
 			srvB.Close()
 		})
@@ -1119,4 +1122,18 @@ func TestAccount_PhoneNumberAdd_WrongCode(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, []string{"+12223334444"}, phoneNumbers)
 	})
+}
+
+func TestServer_AccountStatsResetAt(t *testing.T) {
+	// The account reports when the visitor's daily counts start over: the end of its key's own
+	// 24h period, not midnight UTC
+	s := newTestServer(t, newTestConfigWithAuthFile(t, ""))
+	response := request(t, s, "GET", "/v1/account", "", nil)
+	require.Equal(t, 200, response.Code)
+	account, err := util.UnmarshalJSON[apiAccountResponse](io.NopCloser(response.Body))
+	require.Nil(t, err)
+	resetAt := s.limiter.ResetAt(s.visitor(netip.MustParseAddr("9.9.9.9"), nil).key)
+	require.Equal(t, resetAt.Unix(), account.Stats.ResetAt)
+	require.Greater(t, account.Stats.ResetAt, time.Now().Unix())
+	require.LessOrEqual(t, account.Stats.ResetAt, time.Now().Add(24*time.Hour).Unix()+1)
 }

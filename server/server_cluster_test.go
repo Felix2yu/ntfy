@@ -11,11 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"heckel.io/ntfy/v2/cluster"
 	"heckel.io/ntfy/v2/db"
 	"heckel.io/ntfy/v2/db/pg"
 	dbtest "heckel.io/ntfy/v2/db/test"
+	"heckel.io/ntfy/v2/metrics"
 	"heckel.io/ntfy/v2/model"
 	"heckel.io/ntfy/v2/user"
 )
@@ -237,6 +239,27 @@ func TestServer_Cluster_Role(t *testing.T) {
 	require.Equal(t, cluster.RolePassive, members[0].Role)
 }
 
+func TestServer_Cluster_StopClosesCluster(t *testing.T) {
+	// Stopping the server must stop the cluster: it deregisters the node, so a node starting
+	// after it no longer sees it, and its heartbeat does not outlive the server's database
+	schemaDSN := dbtest.CreateTestPostgresSchema(t)
+	newNode := func(nodeID string) *Server {
+		conf := newTestConfig(t, schemaDSN)
+		conf.ClusterNodeID = nodeID
+		conf.ClusterListen = "127.0.0.1:1" // Enables clustering; not bound since Run() is not called
+		conf.ClusterSecret = "s3cret"
+		conf.ClusterAdvertiseURL = "http://127.0.0.1:1"
+		return newTestServer(t, conf)
+	}
+	sA := newNode("node-a")
+	require.Len(t, sA.cluster.Members(), 1)
+	sA.Stop()
+	sB := newNode("node-b")
+	members := sB.cluster.Members()
+	require.Len(t, members, 1)
+	require.Equal(t, cluster.NodeID("node-b"), members[0].NodeID)
+}
+
 func TestServer_Cluster_ActiveWithPassivePeer(t *testing.T) {
 	// The setup for trying clustering beside production: the production server is the only
 	// active node, a second one runs passive. The active one leads right away, both deliver
@@ -366,6 +389,37 @@ func TestServer_Cluster_DeliverFromBus(t *testing.T) {
 		return len(received) == 1
 	})
 	require.Empty(t, b.Messages()) // Peer messages are never re-relayed
+}
+
+func TestServer_Cluster_DeliverFromBus_WastedWithoutSubscribers(t *testing.T) {
+	// A fan-out message that no subscriber here wants is counted as wasted: its topic is unknown
+	// here, or known but without subscribers. The latter is not published either, so the fan-out
+	// does not keep an idle topic alive (see topicExpungeAfter).
+	s := newTestServer(t, newTestConfig(t, ""))
+	s.cluster = &fakeCluster{}
+	topics, err := s.topicsFromIDs(nil, "idletopic")
+	require.Nil(t, err)
+	idle := topics[0]
+	idle.mu.Lock()
+	idle.lastAccess = time.Now().Add(-topicExpungeAfter - time.Minute)
+	idle.mu.Unlock()
+	wasted := testutil.ToFloat64(metrics.ClusterMessagesWasted)
+
+	// Unknown topic
+	s.deliverFromBus(model.NewDefaultMessage("unknowntopic", "from peer"))
+	require.Equal(t, wasted+1, testutil.ToFloat64(metrics.ClusterMessagesWasted))
+
+	// Known topic without subscribers: wasted, and still stale
+	s.deliverFromBus(model.NewDefaultMessage("idletopic", "from peer"))
+	require.Equal(t, wasted+2, testutil.ToFloat64(metrics.ClusterMessagesWasted))
+	require.True(t, idle.Stale())
+
+	// Known topic with a subscriber: delivered, not wasted
+	idle.Subscribe(func(_ *visitor, m *model.Message) error {
+		return nil
+	}, nil, func() {})
+	s.deliverFromBus(model.NewDefaultMessage("idletopic", "from peer"))
+	require.Equal(t, wasted+2, testutil.ToFloat64(metrics.ClusterMessagesWasted))
 }
 
 func TestServer_Cluster_FirebaseKeepaliverOnlyOnLeader(t *testing.T) {

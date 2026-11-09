@@ -219,7 +219,7 @@ export class SubscriptionManager {
 
     return this.db.notifications
       .orderBy("time") // Sort by time
-      .filter((n) => n.subscriptionId === subscriptionId)
+      .filter((n) => n.subscriptionId === subscriptionId && !n.deleted)
       .reverse()
       .toArray();
   }
@@ -227,6 +227,7 @@ export class SubscriptionManager {
   async getAllNotifications() {
     return this.db.notifications
       .orderBy("time") // Efficient, see docs
+      .filter((n) => !n.deleted)
       .reverse()
       .toArray();
   }
@@ -247,9 +248,24 @@ export class SubscriptionManager {
       // Add notification to database; check and add in one transaction, so a poll storing the
       // same message concurrently (see addNotifications) can't slip in between
       const added = await this.db.transaction("rw", this.db.notifications, async () => {
-        if (await this.db.notifications.get(notification.id)) {
+        // A replayed message keeps its local state (e.g. read or deleted), but one that only a poll
+        // stored (no "new" marker, see addNotifications) wasn't delivered live yet, so it's new
+        const existing = await this.db.notifications.get(notification.id);
+        if (existing && existing.new === undefined) {
+          await this.db.notifications.update(notification.id, { new: 1 });
+          return true;
+        } else if (existing) {
           return false;
         }
+
+        // An update replaces the stored versions of its sequence, unless a newer one is stored
+        // already (e.g. a reconnect replayed an older version), or was deleted
+        const sequenceId = notification.sequence_id || notification.id;
+        const versions = await this.db.notifications.where({ subscriptionId, sequenceId }).toArray();
+        if (versions.some((v) => v.time > notification.time)) {
+          return; // undefined: older version of a stored sequence, so the last-seen marker must not move back
+        }
+        await this.db.notifications.bulkDelete(versions.map((v) => v.id));
         await this.db.notifications.add({
           ...messageWithSequenceId(notification),
           subscriptionId,
@@ -260,7 +276,9 @@ export class SubscriptionManager {
       if (!added) {
         // Never flip an already-read notification back to "new", but keep the last-seen marker
         // up to date, so a reconnect does not replay what we already have.
-        await this.db.subscriptions.update(subscriptionId, { last: notification.id });
+        if (added === false) {
+          await this.db.subscriptions.update(subscriptionId, { last: notification.id });
+        }
         return false;
       }
 
@@ -281,9 +299,9 @@ export class SubscriptionManager {
    * re-writing keeps the stored read state of the existing row.
    */
   async addNotifications(subscriptionId, notifications) {
-    await this.db.transaction("rw", this.db.notifications, async () => {
+    const added = await this.db.transaction("rw", this.db.notifications, async () => {
       // Skip notifications that are already stored (e.g. delivered via WebSocket while this poll
-      // was in flight), so overwriting them doesn't drop their "new" marker
+      // was in flight), so overwriting them doesn't drop their "new" marker, or deleted
       const existing = await this.db.notifications.bulkGet(notifications.map((n) => n.id));
       const notificationsWithSubscriptionId = notifications
         .filter((_, i) => !existing[i])
@@ -304,7 +322,14 @@ export class SubscriptionManager {
       const replaced = versions.flat().filter((v) => updates.some((n) => n.sequenceId === v.sequenceId));
       await this.db.notifications.bulkDelete(replaced.map((v) => v.id));
       await this.db.notifications.bulkPut(updates);
+      return notificationsWithSubscriptionId.length > 0;
     });
+
+    // Don't move the marker if the poll only replayed known messages: a replay of the marker's second
+    // ends with a message older than the marker, and moving back to it replays the marker again
+    if (!added) {
+      return;
+    }
     const lastNotificationId = notifications.at(-1).id;
     await this.db.subscriptions.update(subscriptionId, {
       last: lastNotificationId,
@@ -324,8 +349,13 @@ export class SubscriptionManager {
     return true;
   }
 
+  /**
+   * Marks a notification as deleted instead of removing it: the server replays the whole second of a
+   * since=<id> marker, so a poll can return it again, and the stored row keeps it from being re-added.
+   * Deleted notifications are pruned with the others.
+   */
   async deleteNotification(notificationId) {
-    await this.db.notifications.delete(notificationId);
+    await this.db.notifications.where({ id: notificationId }).modify({ deleted: 1, new: 0 });
   }
 
   async deleteNotificationBySequenceId(subscriptionId, sequenceId) {
@@ -333,7 +363,7 @@ export class SubscriptionManager {
   }
 
   async deleteNotifications(subscriptionId) {
-    await this.db.notifications.where({ subscriptionId }).delete();
+    await this.db.notifications.where({ subscriptionId }).modify({ deleted: 1, new: 0 });
   }
 
   async markNotificationRead(notificationId) {
