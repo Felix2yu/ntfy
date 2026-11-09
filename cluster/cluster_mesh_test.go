@@ -903,7 +903,7 @@ func TestMesh_AccessChangedBroadcast(t *testing.T) {
 	require.Nil(t, err)
 	defer meshB.Close()
 	srvB := &http.Server{Handler: meshB}
-	go srvB.Serve(listenerB)
+	go func() { _ = srvB.Serve(listenerB) }()
 	defer srvB.Close()
 
 	confA := newTestMeshConfig("node-a", "http://127.0.0.1:1")
