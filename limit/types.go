@@ -1,9 +1,14 @@
 package limit
 
 import (
-	"sync"
 	"time"
 )
+
+// Config configures the limit service
+type Config struct {
+	Store       *Store // Shares the daily counts and keeps them across restarts; nil for memory only
+	TrackDeltas bool   // Record the tokens used per key and kind, for BucketDeltas to hand to the peers; off on a single node, where nothing would drain them
+}
 
 // Kind is what a key is being limited on: a request, a message, an email, ... Each kind has its
 // own token bucket per key; messages, emails and calls also have a daily count.
@@ -54,51 +59,22 @@ type Decision struct {
 	Reset      time.Duration // RateLimit t=: until the period ends, or until the bucket's next token (0 if it never refills)
 }
 
+// Buckets is what the nodes of a cluster exchange about their token buckets, per key and kind: what
+// a node used since its last round (Service.BucketDeltas), or what is used below each bucket's burst,
+// for a peer that starts (Service.BucketSnapshot)
+type Buckets map[string]map[Kind]*BucketUsage
+
+// BucketUsage is one bucket's used tokens: since the last exchange (a delta), or below its burst (a
+// snapshot); with the bucket's rule, so a node that never saw the key can create it
+type BucketUsage struct {
+	Used   float64       `json:"u"`
+	Burst  int64         `json:"b"`
+	Refill time.Duration `json:"r"` // Nanoseconds on the wire
+}
+
 // Usage is a key's daily counts in its current period
 type Usage struct {
 	counts [numDaily]int64 // Indexed like a counter's arrays (see dailyIndex)
-}
-
-// counter is one key's daily usage in its current period
-type counter struct {
-	periodStart int64           // When the period started (unix seconds, see periodStart)
-	base        [numDaily]int64 // The key's row as last read: all nodes' usage
-	unflushed   [numDaily]int64 // Admitted here since the last write
-	promoted    bool            // Written to the store: reached the threshold here, or has a row
-}
-
-// counterShard is one independently locked part of the daily counters
-type counterShard struct {
-	counters map[string]*counter
-	mu       sync.Mutex // Protects counters and everything inside them
-}
-
-// bucketEntry is one key's token buckets
-type bucketEntry struct {
-	buckets [numKinds]bucket
-	seen    int64 // Last use, unix nanoseconds
-	full    int64 // When every bucket is full again, unix nanoseconds
-}
-
-// bucketShard is one independently locked part of the token buckets
-type bucketShard struct {
-	entries map[string]*bucketEntry
-	mu      sync.Mutex // Protects entries and everything inside them
-}
-
-// bucket is a token bucket. It is created full: last is zero until the first use, and tokens
-// then start at the rule's burst. Tokens may go negative (debt) when a burst shrinks.
-type bucket struct {
-	tokens float64
-	last   int64 // Unix nanoseconds of the last refill, 0 if never used
-	burst  int64 // Burst of the rule the bucket was last used with; caps refunds and debt
-}
-
-// limiter is the util.Limiter view of one key's bucket for one rule (see Service.Limiter)
-type limiter struct {
-	s    *Service
-	key  string
-	rule Rule
 }
 
 // String returns the kind's stable name
@@ -107,6 +83,22 @@ func (k Kind) String() string {
 		return kindNames[k]
 	}
 	return "unknown"
+}
+
+// MarshalText returns the kind's stable name, so kinds are names on the wire (also as map keys)
+func (k Kind) MarshalText() ([]byte, error) {
+	return []byte(k.String()), nil
+}
+
+// UnmarshalText parses a kind's name. A name this node does not know (a newer peer's kind) is not
+// an error, so the rest of the message still counts; it becomes an invalid kind that callers skip.
+func (k *Kind) UnmarshalText(text []byte) error {
+	kind, ok := ParseKind(string(text))
+	if !ok {
+		kind = numKinds
+	}
+	*k = kind
+	return nil
 }
 
 // ParseKind returns the kind with the given name
@@ -125,32 +117,4 @@ func (u Usage) Count(kind Kind) int64 {
 		return u.counts[i]
 	}
 	return 0
-}
-
-// Allow uses one unit, or returns false if the limit has been reached
-func (l *limiter) Allow() bool {
-	return l.AllowN(1)
-}
-
-// AllowN uses n units, or returns false if the limit has been reached. A negative n refunds, which
-// is how util.LimitReader and util.LimitWriter revert a limiter when a later one rejects.
-func (l *limiter) AllowN(n int64) bool {
-	if n < 0 {
-		l.s.Refund(l.key, l.rule.Kind, -n)
-		return true
-	} else if n == 0 {
-		return true
-	}
-	return l.s.Allow(l.key, l.rule, n).OK
-}
-
-// Value returns the key's daily count of the kind in its current period, 0 for a kind without
-// one (see Usage); the bucket's level is what Service.Tokens reports
-func (l *limiter) Value() int64 {
-	return l.s.Usage(l.key).Count(l.rule.Kind)
-}
-
-// Reset fills the bucket and zeroes the key's usage of the kind
-func (l *limiter) Reset() {
-	l.s.reset(l.key, l.rule.Kind)
 }

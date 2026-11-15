@@ -107,6 +107,7 @@ I've added a ⭐ to projects or posts that have a significant following, or had 
 - [Ntfy App](https://github.com/rubix-studios-pty-ltd/ntfy-app) - Tauri/Rust desktop client for Windows, Linux and MacOS with push notifications.
 - [mac_ntfy](https://github.com/wangty163/mac_ntfy) - Native macOS client for ntfy (Swift)
 - [NtfyBar](https://github.com/roypadina/NtfyBar) - Native macOS menu-bar client: per-topic popups that stay, notifications, clipboard or shell-command actions, rules, history and sandboxed JavaScript plugins (Swift)
+- [ntfy-admin](https://github.com/ksabev/ntfy-admin) - Web admin panel for self-hosted ntfy: users, access rules, tokens, onboarding QR codes, multiple servers (Go)
 
 ## Projects + scripts 
 
@@ -210,6 +211,7 @@ I've added a ⭐ to projects or posts that have a significant following, or had 
 
 ## Blog + forum posts
 
+- [Get a free alert when a web page changes (price, stock, version), using GitHub Actions](https://caelum-kr-11.github.io/blog/website-change-alert-github-actions.html) - caelum-kr-11.github.io - 11/2026
 - [Push alerts for WHM using ntfy](https://rubixstudios.com.au/insights/push-alerts-for-whm-using-ntfy) - rubixstudios.com.au - 5/2026
 - [Device notifications via HTTP with ntfy](https://alistairshepherd.uk/writing/ntfy/) - alistairshepherd.uk - 6/2025
 - [Notifications about (almost) anything with ntfy.sh](https://hamatti.org/posts/notifications-about-almost-anything-with-ntfy-sh/) - hamatti.org - 6/2025
