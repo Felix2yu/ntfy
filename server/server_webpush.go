@@ -5,13 +5,16 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
 	"heckel.io/ntfy/v2/log"
 	"heckel.io/ntfy/v2/model"
 	"heckel.io/ntfy/v2/user"
+	vis "heckel.io/ntfy/v2/visitor" // Aliased: the server has its own visitor type
 	wpush "heckel.io/ntfy/v2/webpush"
 )
 
@@ -27,6 +30,14 @@ const (
 	// mobile devices that are offline (or have the PWA suspended, as iOS does) when the message
 	// is published. 4 weeks is the maximum that WebKit/APNs will hold a message.
 	defaultWebPushTTLSeconds = 28 * 24 * 60 * 60
+
+	// webPushRequestTimeout bounds a single delivery, so a slow or stalled push service
+	// cannot pin connections and goroutines indefinitely
+	webPushRequestTimeout = 15 * time.Second
+
+	// webPushResponseDrainLimit caps how much of a push service response body is read before
+	// closing it; draining small bodies lets the transport reuse the connection
+	webPushResponseDrainLimit = 4096
 )
 
 // webPushPermanentFailureStatusCodes are the push service responses that prove a subscription is
@@ -44,6 +55,12 @@ var webPushPermanentFailureStatusCodes = map[int]bool{
 
 func webPushSubscriptionIsGone(statusCode int) bool {
 	return webPushPermanentFailureStatusCodes[statusCode]
+}
+
+// webPushHTTPClient is shared across deliveries (connection reuse); it is a var so tests can
+// swap in a client with a shorter timeout
+var webPushHTTPClient = &http.Client{
+	Timeout: webPushRequestTimeout,
 }
 
 // webPushAllowedEndpointsRegexes is the host-level allow-list of web push services ntfy
@@ -92,7 +109,9 @@ func (s *Server) handleWebPushUpdate(w http.ResponseWriter, r *http.Request, v *
 			}
 		}
 	}
-	if err := s.webPush.UpsertSubscription(req.Endpoint, req.Auth, req.P256dh, v.MaybeUserID(), v.IP(), req.Topics); err != nil {
+	// Store the masked IP, so the per-subscriber cap covers a whole prefix like all other limits
+	subscriberIP := vis.Mask(v.IP(), v.env.limitsConfig)
+	if err := s.webPush.UpsertSubscription(req.Endpoint, req.Auth, req.P256dh, v.MaybeUserID(), subscriberIP, req.Topics); err != nil {
 		return err
 	}
 	return s.writeJSON(w, newSuccessResponse())
@@ -185,18 +204,17 @@ func (s *Server) sendWebPushNotification(sub *wpush.Subscription, message []byte
 		VAPIDPrivateKey: s.config.WebPushPrivateKey,
 		Urgency:         webpush.UrgencyHigh, // iOS requires this to ensure delivery
 		TTL:             s.webPushTTLSeconds(),
+		HTTPClient:      webPushHTTPClient,
 	})
 	if err != nil {
-		// Transport-level failure (DNS, TLS, connection reset, ...). The subscription itself may
-		// still be perfectly fine, so we must NOT remove it -- doing so used to permanently kill
-		// delivery after a single transient network hiccup, with no way to recover until the user
-		// re-opened the app.
+		// Transport-level failure (DNS, TLS, timeout, connection reset, ...). The subscription
+		// itself may still be perfectly fine, so we must NOT remove it -- doing so used to
+		// permanently kill delivery after a single transient network hiccup, with no way to
+		// recover until the user re-opened the app. This also covers the 15s request timeout.
 		log.Tag(tagWebPush).With(sub).With(contexters...).Err(err).Debug("Unable to publish web push message (transport error), keeping subscription")
 		return err
 	}
-	if resp.Body != nil {
-		defer resp.Body.Close()
-	}
+	defer closeWebPushResponse(resp)
 	if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 		// A successful delivery proves the subscription is alive. Refresh it so that clients which
 		// cannot re-register themselves (iOS PWA, no Periodic Background Sync) are not expired by
@@ -233,4 +251,11 @@ func (s *Server) webPushTTLSeconds() int {
 		return int(s.config.CacheDuration.Seconds())
 	}
 	return defaultWebPushTTLSeconds
+}
+
+// closeWebPushResponse drains (bounded) and closes the response body, so the connection is
+// released and can be reused instead of leaking
+func closeWebPushResponse(resp *http.Response) {
+	_, _ = io.CopyN(io.Discard, resp.Body, webPushResponseDrainLimit)
+	_ = resp.Body.Close()
 }
