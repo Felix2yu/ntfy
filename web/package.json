@@ -22,8 +22,8 @@
     "dexie": "^4.4.7",
     "dexie-react-hooks": "^4.4.0",
     "i18next": "^26.5.12",
-    "i18next-browser-languagedetector": "^8.2.4",
-    "i18next-http-backend": "^4.0.7",
+    "i18next-browser-languagedetector": "^8.3.0",
+    "i18next-http-backend": "^4.0.10",
     "react": "latest",
     "react-dom": "latest",
     "react-i18next": "^17.1.9",
@@ -41,7 +41,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@vitejs/plugin-react": "^6.1.2",
+    "@vitejs/plugin-react": "^6.2.1",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",
@@ -49,11 +49,11 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "fake-indexeddb": "^6.2.7",
-    "globals": "^17.13.0",
+    "globals": "^17.14.0",
     "prettier": "^3.9.10",
-    "vite": "^8.3.5",
+    "vite": "^8.3.6",
     "vite-plugin-pwa": "2.0.0",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   },
   "browserslist": {
     "production": [
