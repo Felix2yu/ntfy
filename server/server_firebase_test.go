@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/netip"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"heckel.io/ntfy/v2/limit"
 	"heckel.io/ntfy/v2/model"
@@ -361,4 +364,46 @@ func TestToFirebaseSender_Abuse(t *testing.T) {
 	sender.messages = make([]*messaging.Message, 0) // Reset to test that time limit is working
 	require.Equal(t, errFirebaseTemporarilyBanned, client.Send(visitor, &model.Message{Topic: "mytopic"}))
 	require.Equal(t, 0, len(sender.Messages()))
+}
+
+func TestNewFirebaseResponse(t *testing.T) {
+	body := `{"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota).","status":"RESOURCE_EXHAUSTED"}}`
+	resp := &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Header:     http.Header{"Retry-After": []string{"60"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+	response := newFirebaseResponse(resp)
+	require.Equal(t, http.StatusTooManyRequests, response.status)
+	require.Equal(t, "60", response.retryAfter)
+	require.Equal(t, body, response.body)
+}
+
+func TestNewFirebaseResponse_TruncatesBody(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", fcmErrorBodyLogLimit+100))),
+	}
+	response := newFirebaseResponse(resp)
+	require.Equal(t, fcmErrorBodyLogLimit, len(response.body))
+	require.Equal(t, "", response.retryAfter)
+}
+
+func TestFirebaseSendError_Context(t *testing.T) {
+	err := &firebaseSendError{
+		err: errors.New("resource has been exhausted"),
+		response: &firebaseResponse{
+			status:     429,
+			retryAfter: "60",
+			body:       `{"error":{"code":429}}`,
+			duration:   250 * time.Millisecond,
+		},
+	}
+	require.Equal(t, "resource has been exhausted", err.Error())
+	require.Equal(t, "resource has been exhausted", err.Context()["error"])
+	require.Equal(t, 429, err.Context()["firebase_http_status"])
+	require.Equal(t, "60", err.Context()["firebase_retry_after"])
+	require.Equal(t, `{"error":{"code":429}}`, err.Context()["firebase_response_body"])
+	require.Equal(t, int64(250), err.Context()["firebase_duration_ms"])
 }
