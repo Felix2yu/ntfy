@@ -504,5 +504,17 @@
   "notifications_load_history_7d": "7天",
   "notifications_load_history_30d": "30天",
   "notifications_load_history_all": "全部历史",
-  "notifications_load_all_confirm": "加载全部历史记录可能需要较长时间，是否继续？"
+  "notifications_load_all_confirm": "加载全部历史记录可能需要较长时间，是否继续？",
+  "login_form_username_label": "用户名或电子邮箱",
+  "account_usage_limits_reset_at": "每日用量限制每 24 小时重置，下次重置在 {{time}}",
+  "account_usage_limits_reset_rolling": "每日用量限制每隔 24 小时重置",
+  "account_usage_approximate": "用量数据几秒钟更新一次，可能略低于实际数字。",
+  "prefs_appearance_date_format_title": "日期格式",
+  "prefs_appearance_date_format_iso8601": "ISO 8601",
+  "prefs_appearance_date_format_dmy": "日/月/年",
+  "prefs_appearance_date_format_dmy_dot": "日.月.年",
+  "prefs_appearance_date_format_mdy": "月/日/年",
+  "prefs_appearance_time_format_title": "时间格式",
+  "prefs_appearance_time_format_12h": "12 小时",
+  "prefs_appearance_time_format_24h": "24 小时"
 }
